@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Reservation, ReservationStatus } from '../types';
+import { Reservation, ReservationStatus, UserRole } from '../types';
 import { formatDate, isOverdue, calculateDaysPassed, formatCurrency, getDeadlineDate, getTotalPrice, getTotalPaid, getBalance, DEADLINE_DAYS } from '../utils';
 
 interface ReservationTableProps {
@@ -7,12 +7,41 @@ interface ReservationTableProps {
   onUpdateStatus: (id: string, status: ReservationStatus) => void;
   onDelete: (id: string) => void;
   onAddPayment: (id: string, amount: number) => void;
+  onEditField: (id: string, field: 'customerName' | 'phoneNumber', newValue: string) => void;
+  role: UserRole | null;
 }
 
-export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations, onUpdateStatus, onDelete, onAddPayment }) => {
+export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations, onUpdateStatus, onDelete, onAddPayment, onEditField, role }) => {
   const [addingPaymentId, setAddingPaymentId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentError, setPaymentError] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPhoneError, setEditPhoneError] = useState('');
+
+  const startEditing = (res: Reservation) => {
+    setEditingId(res.id);
+    setEditName(res.customerName);
+    setEditPhone(res.phoneNumber);
+    setEditPhoneError('');
+  };
+
+  const saveEdit = (e: React.FormEvent, res: Reservation) => {
+    e.preventDefault();
+    const cleanPhone = editPhone.replace(/\D/g, '').slice(0, 8);
+    if (cleanPhone.length !== 8) {
+      setEditPhoneError('El teléfono debe tener exactamente 8 dígitos.');
+      return;
+    }
+    if (!editName.trim()) {
+      setEditPhoneError('El nombre no puede quedar vacío.');
+      return;
+    }
+    if (editName !== res.customerName) onEditField(res.id, 'customerName', editName.trim());
+    if (cleanPhone !== res.phoneNumber) onEditField(res.id, 'phoneNumber', cleanPhone);
+    setEditingId(null);
+  };
 
   const handleAddPayment = (e: React.FormEvent, res: Reservation) => {
     e.preventDefault();
@@ -75,11 +104,47 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                     <span className="text-sm font-bold text-slate-400">{res.correlative}</span>
                   </td>
                   <td className="px-4 py-4 align-top whitespace-nowrap">
-                    <div className="flex flex-col">
-                      <span className="text-[9px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-md mb-1 w-fit border border-blue-200">{res.customerCode}</span>
-                      <div className="font-bold text-slate-900 leading-tight">{res.customerName}</div>
-                      <div className="text-xs text-blue-600 font-black mt-1">{res.phoneNumber}</div>
-                    </div>
+                    {editingId === res.id ? (
+                      <form onSubmit={(e) => saveEdit(e, res)} className="flex flex-col gap-1.5 w-40">
+                        <input
+                          className="px-2 py-1 text-xs border border-blue-300 rounded font-bold bg-blue-50"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          placeholder="Nombre"
+                          autoFocus
+                        />
+                        <input
+                          className="px-2 py-1 text-xs border border-blue-300 rounded font-bold bg-blue-50"
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                          placeholder="Teléfono"
+                        />
+                        {editPhoneError && <p className="text-[9px] text-rose-600 font-bold">{editPhoneError}</p>}
+                        <div className="flex gap-1">
+                          <button type="submit" className="flex-1 bg-blue-600 text-white text-[10px] font-black py-1 rounded">Guardar</button>
+                          <button type="button" onClick={() => setEditingId(null)} className="flex-1 bg-slate-200 text-slate-600 text-[10px] font-black py-1 rounded">Cancelar</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-md mb-1 w-fit border border-blue-200">{res.customerCode}</span>
+                        <div className="font-bold text-slate-900 leading-tight">{res.customerName}</div>
+                        <div className="text-xs text-blue-600 font-black mt-1">{res.phoneNumber}</div>
+                        {res.lastEditedByEmail && (
+                          <div className="text-[9px] text-slate-400 font-bold mt-1" title={res.lastEditedAt}>
+                            ✎ Corregido por {res.lastEditedByEmail}
+                          </div>
+                        )}
+                        {res.status !== ReservationStatus.DELETED && (
+                          <button
+                            onClick={() => startEditing(res)}
+                            className="text-[9px] text-blue-500 hover:text-blue-700 font-black mt-1 text-left uppercase tracking-wide"
+                          >
+                            Corregir datos
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-4 align-top">
                     <ul className="text-xs space-y-1.5">
@@ -139,16 +204,29 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                             </button>
                           </>
                         ) : (
-                          <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${res.status === ReservationStatus.PAID ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-                            {res.status === ReservationStatus.PAID ? 'LIQUIDADO' : 'LIBERADO'}
+                          <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${
+                            res.status === ReservationStatus.PAID ? 'bg-emerald-100 text-emerald-800' :
+                            res.status === ReservationStatus.DELETED ? 'bg-rose-100 text-rose-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {res.status === ReservationStatus.PAID ? 'LIQUIDADO' :
+                             res.status === ReservationStatus.DELETED ? 'ELIMINADO' : 'LIBERADO'}
                           </span>
                         )}
-                        <button
-                          onClick={() => onDelete(res.id)}
-                          className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 transition px-3 py-1.5 rounded-lg text-[11px] font-black"
-                        >
-                          <span>🗑</span> Eliminar
-                        </button>
+                        {res.status === ReservationStatus.DELETED && res.deletedByEmail && (
+                          <p className="text-[9px] text-slate-400 font-bold text-right max-w-[140px]">
+                            Por {res.deletedByEmail}
+                          </p>
+                        )}
+                        {/* Solo el rol "admin" puede eliminar/archivar registros */}
+                        {role === 'admin' && res.status !== ReservationStatus.DELETED && (
+                          <button
+                            onClick={() => onDelete(res.id)}
+                            className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 transition px-3 py-1.5 rounded-lg text-[11px] font-black"
+                          >
+                            <span>🗑</span> Eliminar
+                          </button>
+                        )}
                       </div>
 
                       {addingPaymentId === res.id && (

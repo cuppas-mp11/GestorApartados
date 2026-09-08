@@ -84,3 +84,56 @@ Clic en **"Publicar"**.
 ---
 
 Cuando tengas listo el Paso 1-4, avísame y revisamos juntos que todo esté conectado antes de publicarlo.
+
+---
+
+## Paso 7: Asignar roles (administrador / empleada) a tus 3 correos
+
+Esto controla quién puede eliminar registros. Se hace directo en Firebase, sin tocar código.
+
+1. Ve a **Firestore Database → pestaña "Reglas"** y reemplaza TODO el contenido por esto:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /roles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /reservations/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null && (
+        request.resource.data.status != 'DELETED' ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow delete: if false;
+    }
+    match /inventory/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /editLogs/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
+    }
+  }
+}
+```
+
+Clic en **"Publicar"**. Esta regla es la que de verdad protege el sistema: aunque alguien intente forzar la eliminación desde fuera de la pantalla, Firebase lo rechazará si su correo no tiene rol "admin".
+
+2. Ve a **Authentication → Users** y copia el **UID** de cada uno de tus 3 usuarios (es un código largo de letras y números, aparece en la columna "User UID").
+
+3. Ve a **Firestore Database → pestaña "Datos"** y crea una colección nueva llamada exactamente `roles`.
+
+4. Por cada uno de tus 3 correos, crea un documento dentro de esa colección:
+   - **ID del documento**: pega ahí el UID de ese usuario (el que copiaste en el paso 2).
+   - Agrega dos campos:
+     - `role` (tipo string): escribe `admin` para la dueña o quien deba poder eliminar, o `employee` para la persona que solo debe poder corregir datos, sin eliminar.
+     - `email` (tipo string): el correo de esa persona (solo como referencia, para identificarlo fácil).
+   - Guarda.
+
+5. Repite para los 3 usuarios. Ejemplo: si la dueña debe poder eliminar, su documento lleva `role: admin`. El de la administradora que solo corrige datos, `role: employee`.
+
+Con esto, cualquiera que corrija un nombre o teléfono mal escrito quedará registrado (verás la nota "✎ Corregido por [correo]" en la tabla), pero solo quien tenga `role: admin` podrá ver el botón de "Eliminar" y que realmente funcione.
+

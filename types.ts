@@ -1,7 +1,26 @@
 export enum ReservationStatus {
   PENDING = 'PENDING',
   PAID = 'PAID',
-  CANCELLED = 'CANCELLED'
+  CANCELLED = 'CANCELLED',
+  DELETED = 'DELETED' // Archivado (antes se borraba para siempre; ahora queda en el historial)
+}
+
+export type UserRole = 'admin' | 'employee';
+
+export interface UserRoleDoc {
+  role: UserRole;
+  email: string;
+}
+
+// Registro de correcciones a un apartado (quién cambió qué y cuándo)
+export interface EditLogEntry {
+  id: string;
+  reservationId: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  editedByEmail: string;
+  editedAt: string;
 }
 
 export interface InventoryItem {
@@ -38,4 +57,10 @@ export interface Reservation {
   status: ReservationStatus;
   depositAmount: number;
   payments: Payment[];
+  // Rastro de archivado (soft-delete)
+  deletedAt?: string;
+  deletedByEmail?: string;
+  // Rastro de última corrección manual
+  lastEditedAt?: string;
+  lastEditedByEmail?: string;
 }

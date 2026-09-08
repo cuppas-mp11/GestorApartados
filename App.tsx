@@ -9,7 +9,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { Reservation, ReservationStatus, InventoryItem, Payment } from './types';
+import { Reservation, ReservationStatus, InventoryItem, Payment, UserRole, EditLogEntry } from './types';
 import { ReservationForm } from './components/ReservationForm';
 import { ReservationTable } from './components/ReservationTable';
 import { Stats } from './components/Stats';
@@ -25,11 +25,13 @@ const INVENTORY_COLLECTION = 'inventory';
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [role, setRole] = useState<UserRole | null>(null);
+  const [roleLoading, setRoleLoading] = useState(true);
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
-  const [filter, setFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'CANCELLED' | 'DELETED'>('ALL');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -38,6 +40,32 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  // Leer el rol del usuario actual (admin / employee) desde la colección "roles"
+  useEffect(() => {
+    if (!user) {
+      setRole(null);
+      return;
+    }
+    setRoleLoading(true);
+    const unsubRole = onSnapshot(
+      doc(db, 'roles', user.uid),
+      (snap) => {
+        if (snap.exists()) {
+          setRole((snap.data().role as UserRole) || 'employee');
+        } else {
+          // Si no tiene un rol asignado todavía, se trata como "employee" (el más restringido) por seguridad
+          setRole('employee');
+        }
+        setRoleLoading(false);
+      },
+      () => {
+        setRole('employee');
+        setRoleLoading(false);
+      }
+    );
+    return () => unsubRole();
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -99,10 +127,56 @@ const App: React.FC = () => {
     });
   };
 
+  // Antes borraba el documento para siempre. Ahora lo "archiva" (soft-delete):
+  // el registro sigue existiendo y aparece en la pestaña "Eliminados" del historial.
+  // Las reglas de Firebase (ver GUIA_FIREBASE.md) impiden que alguien sin rol
+  // "admin" pueda completar esta acción, aunque intente saltarse el botón.
   const deleteReservation = async (id: string) => {
-    if (confirm('¿Estás seguro de que deseas eliminar este registro? Esta acción no se puede deshacer.')) {
-      await deleteDoc(doc(db, RESERVATIONS_COLLECTION, id));
+    if (role !== 'admin') {
+      alert('Solo un administrador puede eliminar registros.');
+      return;
     }
+    if (confirm('¿Estás seguro de que deseas eliminar este registro? Pasará al historial de eliminados.')) {
+      await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), {
+        status: ReservationStatus.DELETED,
+        deletedAt: new Date().toISOString(),
+        deletedByEmail: user?.email || 'desconocido',
+      });
+    }
+  };
+
+  // Corrige un dato de un apartado (ej. nombre o teléfono mal escritos) y deja
+  // constancia de quién hizo el cambio y cuándo, tanto en el registro como en
+  // una colección aparte de historial de ediciones.
+  const editReservationField = async (
+    id: string,
+    field: 'customerName' | 'phoneNumber',
+    newValue: string
+  ) => {
+    const res = reservations.find((r) => r.id === id);
+    if (!res) return;
+    const oldValue = res[field];
+    if (oldValue === newValue) return;
+
+    const now = new Date().toISOString();
+    const editorEmail = user?.email || 'desconocido';
+
+    await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), {
+      [field]: newValue,
+      lastEditedAt: now,
+      lastEditedByEmail: editorEmail,
+    });
+
+    const logEntry: EditLogEntry = {
+      id: generateId(),
+      reservationId: id,
+      field,
+      oldValue: oldValue || '',
+      newValue,
+      editedByEmail: editorEmail,
+      editedAt: now,
+    };
+    await setDoc(doc(db, 'editLogs', logEntry.id), logEntry);
   };
 
   const handleInventoryUpdate = async (newItems: InventoryItem[]) => {
@@ -121,7 +195,11 @@ const App: React.FC = () => {
   const filteredReservations = reservations.filter((res) => {
     if (filter === 'OVERDUE') return res.status === ReservationStatus.PENDING && isOverdue(res.date);
     if (filter === 'PENDING') return res.status === ReservationStatus.PENDING;
-    return true;
+    if (filter === 'PAID') return res.status === ReservationStatus.PAID;
+    if (filter === 'CANCELLED') return res.status === ReservationStatus.CANCELLED;
+    if (filter === 'DELETED') return res.status === ReservationStatus.DELETED;
+    // 'ALL' (Todos): todo excepto lo archivado/eliminado, para mantener limpia la vista principal
+    return res.status !== ReservationStatus.DELETED;
   });
 
   const nextCorrelative = reservations.length > 0 ? Math.max(...reservations.map((r) => r.correlative)) + 1 : 1;
@@ -150,14 +228,14 @@ const App: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <header className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="bg-blue-600 text-white p-3 rounded-2xl shadow-xl shadow-blue-200">
+            <div className="bg-[#2bb297] text-black p-3 rounded-2xl shadow-xl shadow-[#2bb297]/30">
               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
               </svg>
             </div>
             <div>
               <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Gestor de Apartados</h1>
-              <p className="mt-1 text-slate-500 font-medium">Boutique &amp; Moda GT</p>
+              <p className="mt-1 text-slate-500 font-medium">Vestimenta GT</p>
             </div>
           </div>
 
@@ -195,24 +273,42 @@ const App: React.FC = () => {
 
           <div className="lg:col-span-3">
             <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
-              <div className="flex p-1 bg-slate-50 rounded-xl w-full sm:w-auto">
+              <div className="flex flex-wrap p-1 bg-slate-50 rounded-xl w-full sm:w-auto gap-1">
                 <button
                   onClick={() => setFilter('ALL')}
-                  className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'ALL' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'ALL' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
                   TODOS
                 </button>
                 <button
                   onClick={() => setFilter('PENDING')}
-                  className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PENDING' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PENDING' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
                   PENDIENTES
                 </button>
                 <button
                   onClick={() => setFilter('OVERDUE')}
-                  className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'OVERDUE' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'OVERDUE' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
                   VENCIDOS
+                </button>
+                <button
+                  onClick={() => setFilter('PAID')}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PAID' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  LIQUIDADOS
+                </button>
+                <button
+                  onClick={() => setFilter('CANCELLED')}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'CANCELLED' ? 'bg-slate-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  LIBERADOS
+                </button>
+                <button
+                  onClick={() => setFilter('DELETED')}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'DELETED' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  ELIMINADOS
                 </button>
               </div>
               <div className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -225,6 +321,8 @@ const App: React.FC = () => {
               onUpdateStatus={updateStatus}
               onDelete={deleteReservation}
               onAddPayment={addPayment}
+              onEditField={editReservationField}
+              role={role}
             />
           </div>
         </div>
