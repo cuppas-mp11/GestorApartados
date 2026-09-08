@@ -112,6 +112,9 @@ service cloud.firestore {
     match /inventory/{id} {
       allow read, write: if request.auth != null;
     }
+    match /customers/{id} {
+      allow read, write: if request.auth != null;
+    }
     match /editLogs/{id} {
       allow read, create: if request.auth != null;
       allow update, delete: if false;

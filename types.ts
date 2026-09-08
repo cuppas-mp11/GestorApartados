@@ -5,6 +5,13 @@ export enum ReservationStatus {
   DELETED = 'DELETED' // Archivado (antes se borraba para siempre; ahora queda en el historial)
 }
 
+export interface Customer {
+  id: string;
+  code: string;
+  name: string;
+  phone: string;
+}
+
 export type UserRole = 'admin' | 'employee';
 
 export interface UserRoleDoc {

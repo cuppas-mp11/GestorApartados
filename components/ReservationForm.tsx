@@ -1,18 +1,19 @@
-import React, { useState } from 'react';
-import { Reservation, ReservationStatus, InventoryItem, ReservationItem } from '../types';
-import { generateId, formatCurrency, getOrAssignCustomerCode } from '../utils';
+import React, { useState, useEffect } from 'react';
+import { Reservation, ReservationStatus, InventoryItem, ReservationItem, Customer } from '../types';
+import { generateId, formatCurrency } from '../utils';
 
 interface ReservationFormProps {
   onAdd: (reservation: Reservation) => void;
   inventory: InventoryItem[];
   nextCorrelative: number;
-  existingReservations: Reservation[];
+  customers: Customer[];
 }
 
-export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, inventory, nextCorrelative, existingReservations }) => {
+export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, inventory, nextCorrelative, customers }) => {
   const [customerName, setCustomerName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [phoneAutoFilled, setPhoneAutoFilled] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState<ReservationItem[]>([
     { id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0 }
@@ -20,6 +21,21 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
   const [depositAmount, setDepositAmount] = useState('');
 
   const totalPrice = items.reduce((acc, item) => acc + (item.pricePerUnit * item.quantity), 0);
+
+  // Autocompletar teléfono cuando el nombre coincide EXACTO con un cliente ya registrado
+  useEffect(() => {
+    const match = customers.find(c => c.name.trim().toLowerCase() === customerName.trim().toLowerCase());
+    if (match && customerName.trim() !== '') {
+      setPhoneNumber(match.phone);
+      setPhoneError('');
+      setPhoneAutoFilled(true);
+    } else if (phoneAutoFilled) {
+      // Si el nombre ya no coincide con nadie, se limpia el teléfono que se había autocompletado
+      setPhoneNumber('');
+      setPhoneAutoFilled(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerName, customers]);
 
   const addItemRow = () => {
     setItems([...items, { id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0 }]);
@@ -54,13 +70,22 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
   };
 
   const validatePhone = (val: string) => {
-    const cleanVal = val.replace(/\D/g, '');
+    const cleanVal = val.replace(/\D/g, '').slice(0, 8);
+    setPhoneAutoFilled(false); // el usuario está escribiendo el teléfono a mano, ya no es "automático"
+
+    if (cleanVal.length === 8) {
+      const match = customers.find(c => c.phone === cleanVal);
+      if (match && !customerName.trim()) {
+        setCustomerName(match.name);
+      }
+    }
+
     if (cleanVal.length > 0 && cleanVal.length !== 8) {
       setPhoneError('El teléfono debe tener exactamente 8 dígitos.');
     } else {
       setPhoneError('');
     }
-    setPhoneNumber(cleanVal.slice(0, 8));
+    setPhoneNumber(cleanVal);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -77,14 +102,13 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
       return;
     }
 
-    const assignedCode = getOrAssignCustomerCode(customerName, existingReservations);
     const reservationId = generateId();
 
     const newReservation: Reservation = {
       id: reservationId,
       correlative: nextCorrelative,
-      customerName,
-      customerCode: assignedCode,
+      customerName: customerName.trim(),
+      customerCode: '', // App.tsx lo asigna al guardar, según la libreta de clientes
       phoneNumber,
       items: items.filter(i => i.garmentId !== ''),
       date: new Date(date).toISOString(),
@@ -103,6 +127,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
     setCustomerName('');
     setPhoneNumber('');
     setPhoneError('');
+    setPhoneAutoFilled(false);
     setDepositAmount('');
     setItems([{ id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0 }]);
   };
@@ -130,18 +155,20 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
               placeholder="Nombre del cliente"
             />
             <datalist id="customer-names">
-              {Array.from(new Set(existingReservations.map(r => r.customerName))).map(name => (
-                <option key={name} value={name} />
+              {customers.map(c => (
+                <option key={c.id} value={c.name} />
               ))}
             </datalist>
           </div>
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">Número de Teléfono (8 dígitos)</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">
+              Número de Teléfono (8 dígitos) {phoneAutoFilled && <span className="text-emerald-500 normal-case">· autocompletado ✓</span>}
+            </label>
             <input
               type="text"
               required
               inputMode="numeric"
-              className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 transition bg-slate-50 font-medium ${phoneError ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:ring-blue-500'}`}
+              className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 transition font-medium ${phoneError ? 'border-rose-400 focus:ring-rose-200 bg-slate-50' : phoneAutoFilled ? 'border-emerald-300 focus:ring-emerald-200 bg-emerald-50' : 'border-slate-200 focus:ring-blue-500 bg-slate-50'}`}
               value={phoneNumber}
               onChange={(e) => validatePhone(e.target.value)}
               placeholder="Ej. 41235678"

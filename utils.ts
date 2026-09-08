@@ -51,18 +51,10 @@ export const getTotalPaid = (res: Reservation): number =>
 export const getBalance = (res: Reservation): number =>
   getTotalPrice(res) - getTotalPaid(res);
 
-// ---- Generación de código de cliente centralizada (antes duplicada en App.tsx y ReservationForm.tsx) ----
+// ---- Código de cliente basado en la libreta de clientes (colección "customers") ----
 
-export const getOrAssignCustomerCode = (
-  customerName: string,
-  existingReservations: Reservation[]
-): string => {
-  const existing = existingReservations.find((r) => r.customerName === customerName);
-  if (existing) return existing.customerCode;
-
-  const codes = existingReservations
-    .map((r) => r.customerCode)
-    .filter((c) => c && c.startsWith('C'));
-  const lastNum = codes.length > 0 ? Math.max(...codes.map((c) => parseInt(c.substring(1)) || 0)) : 0;
-  return `C${String(lastNum + 1).padStart(3, '0')}`;
+export const getNextCustomerCode = (customers: { code: string }[]): string => {
+  const nums = customers.map((c) => parseInt((c.code || '').substring(1)) || 0);
+  const last = nums.length > 0 ? Math.max(...nums) : 0;
+  return `C${String(last + 1).padStart(3, '0')}`;
 };

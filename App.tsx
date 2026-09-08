@@ -9,18 +9,20 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { Reservation, ReservationStatus, InventoryItem, Payment, UserRole, EditLogEntry } from './types';
+import { Reservation, ReservationStatus, InventoryItem, Payment, UserRole, EditLogEntry, Customer } from './types';
 import { ReservationForm } from './components/ReservationForm';
 import { ReservationTable } from './components/ReservationTable';
 import { Stats } from './components/Stats';
 import { InventoryManager } from './components/InventoryManager';
+import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
 import { Login } from './components/Login';
-import { isOverdue, generateId, getTotalPrice, getTotalPaid } from './utils';
+import { isOverdue, generateId, getTotalPrice, getTotalPaid, getNextCustomerCode } from './utils';
 
 const RESERVATIONS_COLLECTION = 'reservations';
 const INVENTORY_COLLECTION = 'inventory';
+const CUSTOMERS_COLLECTION = 'customers';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -30,8 +32,10 @@ const App: React.FC = () => {
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'CANCELLED' | 'DELETED'>('ALL');
+  const [logoFailed, setLogoFailed] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -93,14 +97,59 @@ const App: React.FC = () => {
       (error) => console.error('Error leyendo inventario:', error)
     );
 
+    const unsubCustomers = onSnapshot(
+      collection(db, CUSTOMERS_COLLECTION),
+      (snapshot) => {
+        setCustomers(snapshot.docs.map((d) => d.data() as Customer));
+      },
+      (error) => console.error('Error leyendo clientes:', error)
+    );
+
     return () => {
       unsubReservations();
       unsubInventory();
+      unsubCustomers();
     };
   }, [user]);
 
+  // Antes de guardar el apartado, asegura que exista un perfil de cliente
+  // (o lo actualiza si el teléfono cambió), y le asigna el código correcto.
   const addReservation = async (reservation: Reservation) => {
-    await setDoc(doc(db, RESERVATIONS_COLLECTION, reservation.id), reservation);
+    const trimmedName = reservation.customerName.trim();
+    const existing = customers.find(
+      (c) => c.name.trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+
+    let customerCode: string;
+    if (existing) {
+      customerCode = existing.code;
+      if (existing.phone !== reservation.phoneNumber) {
+        await updateDoc(doc(db, CUSTOMERS_COLLECTION, existing.id), { phone: reservation.phoneNumber });
+      }
+    } else {
+      customerCode = getNextCustomerCode(customers);
+      const newCustomer: Customer = {
+        id: generateId(),
+        code: customerCode,
+        name: trimmedName,
+        phone: reservation.phoneNumber,
+      };
+      await setDoc(doc(db, CUSTOMERS_COLLECTION, newCustomer.id), newCustomer);
+    }
+
+    await setDoc(doc(db, RESERVATIONS_COLLECTION, reservation.id), {
+      ...reservation,
+      customerName: trimmedName,
+      customerCode,
+    });
+  };
+
+  const updateCustomer = async (id: string, updates: { name?: string; phone?: string }) => {
+    await updateDoc(doc(db, CUSTOMERS_COLLECTION, id), updates);
+  };
+
+  const deleteCustomer = async (id: string) => {
+    await deleteDoc(doc(db, CUSTOMERS_COLLECTION, id));
   };
 
   const updateStatus = async (id: string, status: ReservationStatus) => {
@@ -228,10 +277,19 @@ const App: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <header className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="bg-[#2bb297] text-black p-3 rounded-2xl shadow-xl shadow-[#2bb297]/30">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
-              </svg>
+            <div className="bg-[#2bb297] text-black p-3 rounded-2xl shadow-xl shadow-[#2bb297]/30 w-14 h-14 flex items-center justify-center overflow-hidden">
+              {!logoFailed ? (
+                <img
+                  src="/logo.png"
+                  alt="Logo"
+                  className="w-full h-full object-contain"
+                  onError={() => setLogoFailed(true)}
+                />
+              ) : (
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
+                </svg>
+              )}
             </div>
             <div>
               <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Gestor de Apartados</h1>
@@ -262,12 +320,13 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-1 space-y-4">
             <InventoryManager items={inventory} onUpdate={handleInventoryUpdate} />
+            <CustomerManager customers={customers} onUpdate={updateCustomer} onDelete={deleteCustomer} />
             <CustomerBalances reservations={reservations} />
             <ReservationForm
               onAdd={addReservation}
               inventory={inventory}
               nextCorrelative={nextCorrelative}
-              existingReservations={reservations}
+              customers={customers}
             />
           </div>
 

@@ -7,6 +7,7 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,10 +27,19 @@ export const Login: React.FC = () => {
     <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center px-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200 w-full max-w-sm">
         <div className="flex items-center gap-3 mb-6">
-          <div className="bg-[#2bb297] text-black p-2.5 rounded-xl shadow-lg shadow-[#2bb297]/30">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
-            </svg>
+          <div className="bg-[#2bb297] text-black p-2.5 rounded-xl shadow-lg shadow-[#2bb297]/30 w-11 h-11 flex items-center justify-center overflow-hidden">
+            {!logoFailed ? (
+              <img
+                src="/logo.png"
+                alt="Logo"
+                className="w-full h-full object-contain"
+                onError={() => setLogoFailed(true)}
+              />
+            ) : (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
+              </svg>
+            )}
           </div>
           <div>
             <h1 className="text-lg font-black text-slate-900 leading-none">Gestor de Apartados</h1>
