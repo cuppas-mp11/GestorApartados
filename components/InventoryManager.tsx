@@ -36,7 +36,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
       id: generateId(),
       name,
       code: code.toUpperCase(),
-      category: category.trim() || undefined,
+      category: category.trim(),
       basePrice: parsedPrice
     };
 
@@ -67,7 +67,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
             id: generateId(),
             name: row.Nombre || row.name || row.item || 'S/N',
             code: (row.Código || row.code || row.id || generateId().substring(0, 4)).toString().toUpperCase(),
-            category: (row.Categoría || row.categoria || row.category || '').toString().trim() || undefined,
+            category: (row.Categoría || row.categoria || row.category || '').toString().trim(),
             basePrice: parsedPrice
           };
         })

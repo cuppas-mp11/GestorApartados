@@ -44,7 +44,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, exist
         entryDate: now,
         quantityIn: r.quantity,
         quantityRemaining: r.quantity,
-        note: note.trim() || undefined,
+        note: note.trim(),
       };
     });
 
