@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Reservation, ReservationStatus, InventoryItem, ReservationItem, Customer } from '../types';
-import { generateId, formatCurrency } from '../utils';
+import { generateId, formatCurrency, parseLocalDateInput } from '../utils';
 
 interface ReservationFormProps {
   onAdd: (reservation: Reservation) => void;
@@ -111,12 +111,12 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
       customerCode: '', // App.tsx lo asigna al guardar, según la libreta de clientes
       phoneNumber,
       items: items.filter(i => i.garmentId !== ''),
-      date: new Date(date).toISOString(),
+      date: parseLocalDateInput(date).toISOString(),
       status: ReservationStatus.PENDING,
       depositAmount: deposit,
       payments: [{
         id: generateId(),
-        date: new Date(date).toISOString(),
+        date: parseLocalDateInput(date).toISOString(),
         amount: deposit,
         note: 'Abono inicial'
       }]

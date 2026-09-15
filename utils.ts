@@ -3,6 +3,15 @@ import { Reservation } from './types';
 // Plazo de vencimiento centralizado (antes estaba repetido en 3 archivos distintos)
 export const DEADLINE_DAYS = 15;
 
+// Convierte un valor de <input type="date"> (ej. "2026-07-01") a un objeto Date
+// usando la hora LOCAL, evitando el corrimiento de un día que ocurre si se usa
+// `new Date("2026-07-01")` directamente (JS lo interpreta como UTC, y en zonas
+// horarias negativas como Guatemala, GMT-6, eso lo empuja al día anterior).
+export const parseLocalDateInput = (dateString: string): Date => {
+  const [y, m, d] = dateString.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 export const generateId = (): string => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return 'id-' + Math.random().toString(36).slice(2, 11);
@@ -50,6 +59,14 @@ export const getTotalPaid = (res: Reservation): number =>
 
 export const getBalance = (res: Reservation): number =>
   getTotalPrice(res) - getTotalPaid(res);
+
+// Convierte un string "YYYY-MM-DD" (de un <input type="date">) a un Date en hora LOCAL,
+// evitando el bug clásico de JS donde `new Date("2026-07-01")` se interpreta como UTC
+// y puede "retroceder" un día en zonas horarias detrás de UTC (como Guatemala).
+export const parseLocalDate = (dateStr: string): Date => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
 
 // ---- Sistema de Lotes / Rotación de mercadería ----
 

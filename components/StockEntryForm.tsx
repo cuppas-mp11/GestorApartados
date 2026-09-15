@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { InventoryItem, Lot } from '../types';
-import { generateId, getLotLabelForDate, formatCurrency } from '../utils';
+import { generateId, getLotLabelForDate, parseLocalDateInput, formatCurrency } from '../utils';
 
 interface StockEntryFormProps {
   inventory: InventoryItem[];
@@ -19,7 +19,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [rows, setRows] = useState<EntryRow[]>([{ id: generateId(), code: '', quantity: 1 }]);
 
-  const label = getLotLabelForDate(new Date(entryDate));
+  const label = getLotLabelForDate(parseLocalDateInput(entryDate));
 
   const addRow = () => setRows([...rows, { id: generateId(), code: '', quantity: 1 }]);
   const removeRow = (id: string) => rows.length > 1 && setRows(rows.filter((r) => r.id !== id));
@@ -34,7 +34,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
       return;
     }
 
-    const chosenDate = new Date(entryDate).toISOString();
+    const chosenDate = parseLocalDateInput(entryDate).toISOString();
     const newLots: Lot[] = validRows.map((r) => {
       const inv = inventory.find((i) => i.id === r.code)!;
       return {

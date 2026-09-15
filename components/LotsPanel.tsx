@@ -101,13 +101,16 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
   if (!isOpen) {
     return (
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={() => {
+          setIsOpen(true);
+          if (role !== 'admin') setViewMode('TIMELINE_DESC'); // la vendedora ve primero lo más reciente para verificarlo
+        }}
         className="w-full mb-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg transition text-sm flex items-center justify-center gap-2 border border-slate-300"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        Ver Rotación de Lotes
+        {role === 'admin' ? 'Ver Rotación de Lotes' : 'Registro de Mercadería Recibida'}
       </button>
     );
   }
@@ -135,9 +138,21 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                     <div>
                       <span className="text-[10px] font-black bg-white/70 px-1.5 py-0.5 rounded border border-current/20">{lot.code}</span>
                       <p className="text-sm font-bold mt-1">{findName(lot.code)}</p>
-                      <p className="text-[10px] font-bold uppercase mt-0.5">
-                        Quedan {lot.quantityRemaining} de {lot.quantityIn} · {lot.weeks} semana{lot.weeks !== 1 ? 's' : ''} · {formatDate(lot.entryDate)}
-                      </p>
+                      <div className="flex gap-1.5 mt-1.5">
+                        <div className="bg-white/70 rounded-md px-2 py-1">
+                          <p className="text-[8px] font-black uppercase opacity-70 leading-none">Ingresadas</p>
+                          <p className="text-xs font-black leading-tight mt-0.5">{lot.quantityIn}</p>
+                        </div>
+                        <div className="bg-white/70 rounded-md px-2 py-1">
+                          <p className="text-[8px] font-black uppercase opacity-70 leading-none">Disponibles</p>
+                          <p className="text-xs font-black leading-tight mt-0.5">{lot.quantityRemaining}</p>
+                        </div>
+                        <div className="bg-white/70 rounded-md px-2 py-1">
+                          <p className="text-[8px] font-black uppercase opacity-70 leading-none">Semanas</p>
+                          <p className="text-xs font-black leading-tight mt-0.5">{lot.weeks}</p>
+                        </div>
+                      </div>
+                      <p className="text-[10px] font-bold mt-1.5">{formatDate(lot.entryDate)}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-white/70">{alert.label}</span>
@@ -343,12 +358,19 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                       {g.hasFlagged && (
                         <span className="absolute -top-2 -right-2 bg-[#8c3a4b] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center" title="Hay un reporte pendiente">!</span>
                       )}
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-black">{g.label}</span>
-                        <span className="text-xs font-bold bg-white/70 px-2 py-0.5 rounded">{g.totalRemaining} de {g.totalIn}</span>
+                      <span className="text-sm font-black block">{g.label}</span>
+                      <div className="grid grid-cols-2 gap-1 mt-2">
+                        <div className="bg-white/70 rounded-md px-1.5 py-1 text-center">
+                          <p className="text-[8px] font-black uppercase opacity-70 leading-none">Ingresadas</p>
+                          <p className="text-sm font-black leading-tight mt-0.5">{g.totalIn}</p>
+                        </div>
+                        <div className="bg-white/70 rounded-md px-1.5 py-1 text-center">
+                          <p className="text-[8px] font-black uppercase opacity-70 leading-none">Disponibles</p>
+                          <p className="text-sm font-black leading-tight mt-0.5">{g.totalRemaining}</p>
+                        </div>
                       </div>
                       <p className="text-[10px] font-bold mt-2">{formatDate(g.entryDate)}</p>
-                      <p className="text-[9px] font-black uppercase mt-1">{alert.label}</p>
+                      <p className="text-[9px] font-black uppercase mt-1">{alert.label} · {g.weeks} sem.</p>
                     </button>
                   </React.Fragment>
                 );
