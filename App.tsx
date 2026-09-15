@@ -362,6 +362,14 @@ const App: React.FC = () => {
                 <p className="text-rose-700 text-sm font-black">{overdueCount} ALERTAS DE VENCIMIENTO</p>
               </div>
             )}
+            <span
+              className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
+                role === 'admin' ? 'bg-[#8c3a4b]/10 text-[#8c3a4b] border border-[#8c3a4b]/30' : 'bg-[#2bb297]/10 text-[#1a8a72] border border-[#2bb297]/30'
+              }`}
+              title={user.email || ''}
+            >
+              {role === 'admin' ? 'Admin' : 'Tienda'}
+            </span>
             <button
               onClick={() => signOut(auth)}
               className="text-xs font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest px-3 py-2"

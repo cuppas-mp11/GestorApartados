@@ -98,19 +98,36 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
     setSelectedLabel(null);
   };
 
+  const pendingVerificationCount = lots.filter((l) => l.verificationStatus !== 'confirmed' && l.verificationStatus !== 'flagged').length;
+
   if (!isOpen) {
+    if (role === 'admin') {
+      return (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="w-full mb-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg transition text-sm flex items-center justify-center gap-2 border border-slate-300"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Ver Rotación de Lotes
+        </button>
+      );
+    }
     return (
       <button
-        onClick={() => {
-          setIsOpen(true);
-          if (role !== 'admin') setViewMode('TIMELINE_DESC'); // la vendedora ve primero lo más reciente para verificarlo
-        }}
-        className="w-full mb-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg transition text-sm flex items-center justify-center gap-2 border border-slate-300"
+        onClick={() => { setIsOpen(true); setViewMode('TIMELINE_DESC'); }}
+        className="relative w-full mb-4 bg-[#2bb297] hover:bg-[#1a8a72] text-white font-bold py-2.5 rounded-lg transition text-sm flex items-center justify-center gap-2 shadow-md shadow-[#2bb297]/30"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        {role === 'admin' ? 'Ver Rotación de Lotes' : 'Registro de Mercadería Recibida'}
+        Registro de Mercadería Recibida
+        {pendingVerificationCount > 0 && (
+          <span className="absolute -top-2 -right-2 bg-[#8c3a4b] text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white">
+            {pendingVerificationCount}
+          </span>
+        )}
       </button>
     );
   }
