@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { InventoryItem, Lot } from '../types';
-import { generateId, getCurrentLotLabel, formatCurrency } from '../utils';
+import { generateId, getLotLabelForDate, formatCurrency } from '../utils';
 
 interface StockEntryFormProps {
   inventory: InventoryItem[];
@@ -16,9 +16,10 @@ interface EntryRow {
 export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSubmit }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [note, setNote] = useState('');
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [rows, setRows] = useState<EntryRow[]>([{ id: generateId(), code: '', quantity: 1 }]);
 
-  const label = getCurrentLotLabel();
+  const label = getLotLabelForDate(new Date(entryDate));
 
   const addRow = () => setRows([...rows, { id: generateId(), code: '', quantity: 1 }]);
   const removeRow = (id: string) => rows.length > 1 && setRows(rows.filter((r) => r.id !== id));
@@ -33,14 +34,14 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
       return;
     }
 
-    const now = new Date().toISOString();
+    const chosenDate = new Date(entryDate).toISOString();
     const newLots: Lot[] = validRows.map((r) => {
       const inv = inventory.find((i) => i.id === r.code)!;
       return {
         id: generateId(),
         code: inv.code,
         label,
-        entryDate: now,
+        entryDate: chosenDate,
         quantityIn: r.quantity,
         quantityRemaining: r.quantity,
         note: note.trim(),
@@ -50,6 +51,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
     onSubmit(newLots);
     setRows([{ id: generateId(), code: '', quantity: 1 }]);
     setNote('');
+    setEntryDate(new Date().toISOString().split('T')[0]);
     setIsOpen(false);
   };
 
@@ -73,7 +75,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
             <h2 className="text-lg font-bold text-slate-800">Nueva Entrega de Mercadería</h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase">Lote: <span className="text-[#1a8a72]">{label}</span> (se asigna solo)</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase">Lote: <span className="text-[#1a8a72]">{label}</span> (según la fecha elegida abajo)</p>
           </div>
           <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
@@ -120,6 +122,19 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
             >
               + Agregar otra prenda a esta entrega
             </button>
+
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">
+                Fecha de la entrega <span className="text-slate-400 normal-case">(hoy por defecto — cámbiala si estás registrando algo con retraso)</span>
+              </label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold"
+                value={entryDate}
+                onChange={(e) => setEntryDate(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
 
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">Nota (opcional)</label>
