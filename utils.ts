@@ -55,16 +55,16 @@ export const getBalance = (res: Reservation): number =>
 
 const MONTH_ABBR = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
-// Genera la siguiente etiqueta de lote (ej. "ENE03") basada en el mes actual.
-// La numeración reinicia cada mes.
-export const getNextLotLabel = (existingLabels: string[]): string => {
-  const abbr = MONTH_ABBR[new Date().getMonth()];
-  const nums = existingLabels
-    .filter((l) => l.startsWith(abbr))
-    .map((l) => parseInt(l.slice(3)) || 0);
-  const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
-  return `${abbr}${String(next).padStart(2, '0')}`;
+// Etiqueta de lote basada en semana de CALENDARIO dentro del mes (no en el orden de entregas):
+// días 1-7 = semana 01, días 8-14 = semana 02, etc. Si dos entregas caen en el mismo
+// bloque de 7 días, comparten automáticamente la misma etiqueta.
+export const getLotLabelForDate = (date: Date): string => {
+  const abbr = MONTH_ABBR[date.getMonth()];
+  const week = Math.ceil(date.getDate() / 7);
+  return `${abbr}${String(week).padStart(2, '0')}`;
 };
+
+export const getCurrentLotLabel = (): string => getLotLabelForDate(new Date());
 
 export const getWeeksInStore = (entryDateISO: string): number => {
   return Math.floor(calculateDaysPassed(entryDateISO) / 7);

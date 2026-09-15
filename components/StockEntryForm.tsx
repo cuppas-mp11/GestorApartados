@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { InventoryItem, Lot } from '../types';
-import { generateId, getNextLotLabel, formatCurrency } from '../utils';
+import { generateId, getCurrentLotLabel, formatCurrency } from '../utils';
 
 interface StockEntryFormProps {
   inventory: InventoryItem[];
-  existingLotLabels: string[];
   onSubmit: (lots: Lot[]) => void;
 }
 
@@ -14,12 +13,12 @@ interface EntryRow {
   quantity: number;
 }
 
-export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, existingLotLabels, onSubmit }) => {
+export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSubmit }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [note, setNote] = useState('');
   const [rows, setRows] = useState<EntryRow[]>([{ id: generateId(), code: '', quantity: 1 }]);
 
-  const label = getNextLotLabel(existingLotLabels);
+  const label = getCurrentLotLabel();
 
   const addRow = () => setRows([...rows, { id: generateId(), code: '', quantity: 1 }]);
   const removeRow = (id: string) => rows.length > 1 && setRows(rows.filter((r) => r.id !== id));

@@ -351,7 +351,6 @@ const App: React.FC = () => {
             <InventoryManager items={inventory} lots={lots} onUpdate={handleInventoryUpdate} />
             <StockEntryForm
               inventory={inventory}
-              existingLotLabels={lots.map((l) => l.label)}
               onSubmit={addStockEntry}
             />
             <LotsPanel inventory={inventory} lots={lots} role={role} onDeleteLot={deleteLot} />

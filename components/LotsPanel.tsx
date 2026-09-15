@@ -28,7 +28,7 @@ interface LabelGroup {
 export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onDeleteLot }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'TIMELINE' | 'MONTH' | 'YEAR'>('TIMELINE');
+  const [viewMode, setViewMode] = useState<'TIMELINE_ASC' | 'TIMELINE_DESC' | 'MONTH' | 'YEAR'>('TIMELINE_ASC');
   const [selectedMonth, setSelectedMonth] = useState<string>(''); // "2026-09"
   const [selectedYear, setSelectedYear] = useState<string>(''); // "2026"
 
@@ -65,11 +65,16 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
     return Array.from(set).sort();
   }, [groups]);
 
-  const visibleGroups = groups.filter((g) => {
-    if (viewMode === 'MONTH' && selectedMonth) return g.entryDate.startsWith(selectedMonth);
-    if (viewMode === 'YEAR' && selectedYear) return g.entryDate.startsWith(selectedYear);
-    return true; // TIMELINE muestra todo
-  });
+  const visibleGroups = groups
+    .filter((g) => {
+      if (viewMode === 'MONTH' && selectedMonth) return g.entryDate.startsWith(selectedMonth);
+      if (viewMode === 'YEAR' && selectedYear) return g.entryDate.startsWith(selectedYear);
+      return true; // TIMELINE_ASC / TIMELINE_DESC muestran todo
+    })
+    .sort((a, b) => {
+      const diff = new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime();
+      return viewMode === 'TIMELINE_DESC' ? -diff : diff;
+    });
 
   // Lotes individuales (por código) que pertenecen a la etiqueta seleccionada, para la vista de detalle
   const detailLots = selectedLabel
@@ -161,10 +166,16 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ordenar por:</span>
             <button
-              onClick={() => setViewMode('TIMELINE')}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition ${viewMode === 'TIMELINE' ? 'bg-slate-900 text-white border-slate-900' : 'text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+              onClick={() => setViewMode('TIMELINE_ASC')}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition ${viewMode === 'TIMELINE_ASC' ? 'bg-slate-900 text-white border-slate-900' : 'text-slate-500 border-slate-200 hover:bg-slate-100'}`}
             >
-              Antiguo a Nuevo
+              Más antiguo
+            </button>
+            <button
+              onClick={() => setViewMode('TIMELINE_DESC')}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition ${viewMode === 'TIMELINE_DESC' ? 'bg-slate-900 text-white border-slate-900' : 'text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+            >
+              Más nuevo
             </button>
             <button
               onClick={() => { setViewMode('MONTH'); if (!selectedMonth && availableMonths.length) setSelectedMonth(availableMonths[availableMonths.length - 1]); }}
@@ -211,7 +222,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {visibleGroups.map((g) => {
                 const monthKey = g.entryDate.substring(0, 7);
-                const showDivider = viewMode === 'TIMELINE' && monthKey !== lastMonthKey;
+                const showDivider = (viewMode === 'TIMELINE_ASC' || viewMode === 'TIMELINE_DESC') && monthKey !== lastMonthKey;
                 lastMonthKey = monthKey;
                 const alert = getLotAlertLevel(g.weeks);
                 return (
