@@ -181,6 +181,34 @@ const App: React.FC = () => {
     await deleteDoc(doc(db, LOTS_COLLECTION, id));
   };
 
+  // La vendedora confirma o reporta un problema al recibir la mercadería
+  const verifyLot = async (id: string, status: 'confirmed' | 'flagged', note?: string) => {
+    await updateDoc(doc(db, LOTS_COLLECTION, id), {
+      verificationStatus: status,
+      verificationNote: status === 'flagged' ? (note || '') : '',
+      verifiedByEmail: user?.email || 'desconocido',
+      verifiedAt: new Date().toISOString(),
+    });
+  };
+
+  // Solo un administrador puede corregir la cantidad de un lote ya reportado con problema.
+  // Se recibe tanto la nueva cantidad ingresada como la nueva cantidad restante (ya
+  // ajustada por quien llama), para no perder ventas que ya se hayan descontado de ese lote.
+  const correctLotQuantity = async (id: string, newQuantityIn: number, newQuantityRemaining: number) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede corregir cantidades.');
+      return;
+    }
+    await updateDoc(doc(db, LOTS_COLLECTION, id), {
+      quantityIn: newQuantityIn,
+      quantityRemaining: newQuantityRemaining,
+      verificationStatus: 'confirmed',
+      verificationNote: '',
+      verifiedByEmail: user?.email || 'desconocido',
+      verifiedAt: new Date().toISOString(),
+    });
+  };
+
   const updateStatus = async (id: string, status: ReservationStatus) => {
     const label = status === ReservationStatus.PAID
       ? 'marcar este apartado como LIQUIDADO'
@@ -349,11 +377,20 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-1 space-y-4">
             <InventoryManager items={inventory} lots={lots} onUpdate={handleInventoryUpdate} />
-            <StockEntryForm
+            {role === 'admin' && (
+              <StockEntryForm
+                inventory={inventory}
+                onSubmit={addStockEntry}
+              />
+            )}
+            <LotsPanel
               inventory={inventory}
-              onSubmit={addStockEntry}
+              lots={lots}
+              role={role}
+              onDeleteLot={deleteLot}
+              onVerifyLot={verifyLot}
+              onCorrectQuantity={correctLotQuantity}
             />
-            <LotsPanel inventory={inventory} lots={lots} role={role} onDeleteLot={deleteLot} />
             <CustomerManager customers={customers} onUpdate={updateCustomer} onDelete={deleteCustomer} />
             <CustomerBalances reservations={reservations} />
             <ReservationForm

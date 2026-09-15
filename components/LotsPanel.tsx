@@ -7,6 +7,8 @@ interface LotsPanelProps {
   lots: Lot[];
   role: UserRole | null;
   onDeleteLot: (id: string) => void;
+  onVerifyLot: (id: string, status: 'confirmed' | 'flagged', note?: string) => void;
+  onCorrectQuantity: (id: string, newQuantityIn: number, newQuantityRemaining: number) => void;
 }
 
 const cardStyles = {
@@ -23,14 +25,19 @@ interface LabelGroup {
   totalIn: number;
   totalRemaining: number;
   weeks: number;
+  hasFlagged: boolean;
 }
 
-export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onDeleteLot }) => {
+export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onDeleteLot, onVerifyLot, onCorrectQuantity }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'TIMELINE_ASC' | 'TIMELINE_DESC' | 'MONTH' | 'YEAR'>('TIMELINE_ASC');
   const [selectedMonth, setSelectedMonth] = useState<string>(''); // "2026-09"
   const [selectedYear, setSelectedYear] = useState<string>(''); // "2026"
+  const [flaggingId, setFlaggingId] = useState<string | null>(null);
+  const [flagNote, setFlagNote] = useState('');
+  const [correctingId, setCorrectingId] = useState<string | null>(null);
+  const [correctValue, setCorrectValue] = useState('');
 
   const findName = (code: string) => inventory.find((i) => i.code === code)?.name || code;
 
@@ -42,6 +49,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
       if (existing) {
         existing.totalIn += lot.quantityIn;
         existing.totalRemaining += lot.quantityRemaining;
+        if (lot.verificationStatus === 'flagged') existing.hasFlagged = true;
       } else {
         map.set(lot.label, {
           label: lot.label,
@@ -49,6 +57,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
           totalIn: lot.quantityIn,
           totalRemaining: lot.quantityRemaining,
           weeks: getWeeksInStore(lot.entryDate),
+          hasFlagged: lot.verificationStatus === 'flagged',
         });
       }
     }
@@ -119,24 +128,119 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
           <div className="p-5 overflow-y-auto flex-1 space-y-2">
             {detailLots.map((lot) => {
               const alert = getLotAlertLevel(lot.weeks);
+              const status = lot.verificationStatus; // undefined | 'confirmed' | 'flagged'
               return (
-                <div key={lot.id} className={`p-3 border rounded-xl flex items-center justify-between ${cardStyles[alert.level]}`}>
-                  <div>
-                    <span className="text-[10px] font-black bg-white/70 px-1.5 py-0.5 rounded border border-current/20">{lot.code}</span>
-                    <p className="text-sm font-bold mt-1">{findName(lot.code)}</p>
-                    <p className="text-[10px] font-bold uppercase mt-0.5">
-                      Quedan {lot.quantityRemaining} de {lot.quantityIn} · {lot.weeks} semana{lot.weeks !== 1 ? 's' : ''} · {formatDate(lot.entryDate)}
-                    </p>
+                <div key={lot.id} className={`p-3 border rounded-xl ${cardStyles[alert.level]}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-black bg-white/70 px-1.5 py-0.5 rounded border border-current/20">{lot.code}</span>
+                      <p className="text-sm font-bold mt-1">{findName(lot.code)}</p>
+                      <p className="text-[10px] font-bold uppercase mt-0.5">
+                        Quedan {lot.quantityRemaining} de {lot.quantityIn} · {lot.weeks} semana{lot.weeks !== 1 ? 's' : ''} · {formatDate(lot.entryDate)}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-white/70">{alert.label}</span>
+                      {role === 'admin' && (
+                        <button
+                          onClick={() => { if (confirm('¿Eliminar este lote?')) onDeleteLot(lot.id); }}
+                          className="text-[9px] font-black underline opacity-70 hover:opacity-100"
+                        >
+                          Eliminar
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1.5">
-                    <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-white/70">{alert.label}</span>
-                    {role === 'admin' && (
-                      <button
-                        onClick={() => { if (confirm('¿Eliminar este lote?')) onDeleteLot(lot.id); }}
-                        className="text-[9px] font-black underline opacity-70 hover:opacity-100"
-                      >
-                        Eliminar
-                      </button>
+
+                  {/* ---- Verificación cruzada ---- */}
+                  <div className="mt-2 pt-2 border-t border-current/10">
+                    {status === 'confirmed' && (
+                      <p className="text-[10px] font-black text-emerald-700">✓ Confirmado por {lot.verifiedByEmail}</p>
+                    )}
+
+                    {status === 'flagged' && (
+                      <div className="bg-white/70 rounded-lg p-2">
+                        <p className="text-[10px] font-black text-[#8c3a4b]">⚠️ Reportado por {lot.verifiedByEmail}: "{lot.verificationNote}"</p>
+                        {role === 'admin' && (
+                          correctingId === lot.id ? (
+                            <div className="flex items-center gap-1 mt-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                className="w-20 px-2 py-1 text-xs border border-slate-300 rounded font-bold"
+                                placeholder="Cant. real"
+                                value={correctValue}
+                                onChange={(e) => setCorrectValue(e.target.value)}
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => {
+                                  const newQty = parseInt(correctValue);
+                                  if (isNaN(newQty) || newQty < 0) { alert('Ingresa una cantidad válida.'); return; }
+                                  const delta = newQty - lot.quantityIn;
+                                  onCorrectQuantity(lot.id, newQty, Math.max(0, lot.quantityRemaining + delta));
+                                  setCorrectingId(null);
+                                  setCorrectValue('');
+                                }}
+                                className="bg-slate-800 text-white text-[10px] font-black px-2 py-1 rounded"
+                              >
+                                Guardar
+                              </button>
+                              <button onClick={() => setCorrectingId(null)} className="text-[10px] font-bold px-1">Cancelar</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setCorrectingId(lot.id); setCorrectValue(String(lot.quantityIn)); }}
+                              className="text-[9px] font-black underline mt-1"
+                            >
+                              Corregir cantidad
+                            </button>
+                          )
+                        )}
+                      </div>
+                    )}
+
+                    {status !== 'confirmed' && status !== 'flagged' && role !== 'admin' && (
+                      flaggingId === lot.id ? (
+                        <div className="flex flex-col gap-1.5">
+                          <input
+                            type="text"
+                            className="px-2 py-1 text-xs border border-slate-300 rounded"
+                            placeholder='Ej. "Llegaron 12, no 15"'
+                            value={flagNote}
+                            onChange={(e) => setFlagNote(e.target.value)}
+                            autoFocus
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => { if (flagNote.trim()) { onVerifyLot(lot.id, 'flagged', flagNote.trim()); setFlaggingId(null); setFlagNote(''); } }}
+                              className="flex-1 bg-[#8c3a4b] text-white text-[10px] font-black py-1 rounded"
+                            >
+                              Enviar aviso
+                            </button>
+                            <button onClick={() => setFlaggingId(null)} className="flex-1 bg-white text-[10px] font-bold py-1 rounded">Cancelar</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => onVerifyLot(lot.id, 'confirmed')}
+                            className="flex-1 bg-emerald-600 text-white text-[10px] font-black py-1.5 rounded-lg"
+                          >
+                            ✓ Correcto
+                          </button>
+                          <button
+                            onClick={() => setFlaggingId(lot.id)}
+                            className="flex-1 bg-white border border-[#8c3a4b] text-[#8c3a4b] text-[10px] font-black py-1.5 rounded-lg"
+                          >
+                            ⚠️ No coincide
+                          </button>
+                        </div>
+                      )
+                    )}
+
+                    {status !== 'confirmed' && status !== 'flagged' && role === 'admin' && (
+                      <p className="text-[10px] font-bold opacity-60">Pendiente de revisión por la vendedora</p>
                     )}
                   </div>
                 </div>
@@ -234,8 +338,11 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                     )}
                     <button
                       onClick={() => setSelectedLabel(g.label)}
-                      className={`p-3 rounded-xl border-2 text-left hover:shadow-md transition ${cardStyles[alert.level]}`}
+                      className={`p-3 rounded-xl border-2 text-left hover:shadow-md transition relative ${cardStyles[alert.level]}`}
                     >
+                      {g.hasFlagged && (
+                        <span className="absolute -top-2 -right-2 bg-[#8c3a4b] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center" title="Hay un reporte pendiente">!</span>
+                      )}
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-black">{g.label}</span>
                         <span className="text-xs font-bold bg-white/70 px-2 py-0.5 rounded">{g.totalRemaining} de {g.totalIn}</span>

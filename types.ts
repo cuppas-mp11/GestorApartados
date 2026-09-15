@@ -49,6 +49,11 @@ export interface Lot {
   quantityIn: number;
   quantityRemaining: number;
   note?: string;
+  // Verificación cruzada: la vendedora confirma o reporta un problema con lo que llegó
+  verificationStatus?: 'confirmed' | 'flagged'; // sin definir = pendiente de revisar
+  verificationNote?: string; // razón cuando se marca "flagged"
+  verifiedByEmail?: string;
+  verifiedAt?: string;
 }
 
 export interface ReservationItem {
