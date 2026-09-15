@@ -115,6 +115,12 @@ service cloud.firestore {
     match /customers/{id} {
       allow read, write: if request.auth != null;
     }
+    match /lots/{id} {
+      allow read, create: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow update: if request.auth != null;
+    }
     match /editLogs/{id} {
       allow read, create: if request.auth != null;
       allow update, delete: if false;

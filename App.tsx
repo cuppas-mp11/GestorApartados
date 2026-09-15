@@ -9,11 +9,13 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { Reservation, ReservationStatus, InventoryItem, Payment, UserRole, EditLogEntry, Customer } from './types';
+import { Reservation, ReservationStatus, InventoryItem, Payment, UserRole, EditLogEntry, Customer, Lot } from './types';
 import { ReservationForm } from './components/ReservationForm';
 import { ReservationTable } from './components/ReservationTable';
 import { Stats } from './components/Stats';
 import { InventoryManager } from './components/InventoryManager';
+import { StockEntryForm } from './components/StockEntryForm';
+import { LotsPanel } from './components/LotsPanel';
 import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
@@ -23,6 +25,7 @@ import { isOverdue, generateId, getTotalPrice, getTotalPaid, getNextCustomerCode
 const RESERVATIONS_COLLECTION = 'reservations';
 const INVENTORY_COLLECTION = 'inventory';
 const CUSTOMERS_COLLECTION = 'customers';
+const LOTS_COLLECTION = 'lots';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -33,6 +36,7 @@ const App: React.FC = () => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [lots, setLots] = useState<Lot[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'CANCELLED' | 'DELETED'>('ALL');
   const [logoFailed, setLogoFailed] = useState(false);
@@ -105,10 +109,19 @@ const App: React.FC = () => {
       (error) => console.error('Error leyendo clientes:', error)
     );
 
+    const unsubLots = onSnapshot(
+      collection(db, LOTS_COLLECTION),
+      (snapshot) => {
+        setLots(snapshot.docs.map((d) => d.data() as Lot));
+      },
+      (error) => console.error('Error leyendo lotes:', error)
+    );
+
     return () => {
       unsubReservations();
       unsubInventory();
       unsubCustomers();
+      unsubLots();
     };
   }, [user]);
 
@@ -150,6 +163,22 @@ const App: React.FC = () => {
 
   const deleteCustomer = async (id: string) => {
     await deleteDoc(doc(db, CUSTOMERS_COLLECTION, id));
+  };
+
+  // Registra una entrega de mercadería: guarda uno o más lotes de una sola vez
+  const addStockEntry = async (newLots: Lot[]) => {
+    for (const lot of newLots) {
+      await setDoc(doc(db, LOTS_COLLECTION, lot.id), lot);
+    }
+  };
+
+  // Solo un administrador puede eliminar un lote (ej. error de captura)
+  const deleteLot = async (id: string) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede eliminar lotes.');
+      return;
+    }
+    await deleteDoc(doc(db, LOTS_COLLECTION, id));
   };
 
   const updateStatus = async (id: string, status: ReservationStatus) => {
@@ -277,7 +306,7 @@ const App: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <header className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="bg-[#2bb297] text-black p-3 rounded-2xl shadow-xl shadow-[#2bb297]/30 w-14 h-14 flex items-center justify-center overflow-hidden">
+            <div className="bg-[#2bb297] rounded-2xl shadow-xl shadow-[#2bb297]/30 w-14 h-14 flex items-center justify-center overflow-hidden">
               {!logoFailed ? (
                 <img
                   src="/logo.png"
@@ -286,7 +315,7 @@ const App: React.FC = () => {
                   onError={() => setLogoFailed(true)}
                 />
               ) : (
-                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
                 </svg>
               )}
@@ -319,7 +348,13 @@ const App: React.FC = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-1 space-y-4">
-            <InventoryManager items={inventory} onUpdate={handleInventoryUpdate} />
+            <InventoryManager items={inventory} lots={lots} onUpdate={handleInventoryUpdate} />
+            <StockEntryForm
+              inventory={inventory}
+              existingLotLabels={lots.map((l) => l.label)}
+              onSubmit={addStockEntry}
+            />
+            <LotsPanel inventory={inventory} lots={lots} role={role} onDeleteLot={deleteLot} />
             <CustomerManager customers={customers} onUpdate={updateCustomer} onDelete={deleteCustomer} />
             <CustomerBalances reservations={reservations} />
             <ReservationForm

@@ -1,20 +1,25 @@
 import React, { useState, useRef } from 'react';
-import { InventoryItem } from '../types';
+import { InventoryItem, Lot } from '../types';
 import { generateId, formatCurrency } from '../utils';
 import * as XLSX from 'xlsx';
 
 interface InventoryManagerProps {
   items: InventoryItem[];
+  lots: Lot[];
   onUpdate: (items: InventoryItem[]) => void;
 }
 
-export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, onUpdate }) => {
+export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots, onUpdate }) => {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
+  const [category, setCategory] = useState('');
   const [price, setPrice] = useState('');
   const [formError, setFormError] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const stockFor = (code: string) =>
+    lots.filter((l) => l.code === code).reduce((acc, l) => acc + l.quantityRemaining, 0);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,12 +36,14 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, onUpd
       id: generateId(),
       name,
       code: code.toUpperCase(),
+      category: category.trim() || undefined,
       basePrice: parsedPrice
     };
 
     onUpdate([...items, newItem]);
     setName('');
     setCode('');
+    setCategory('');
     setPrice('');
   };
 
@@ -60,6 +67,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, onUpd
             id: generateId(),
             name: row.Nombre || row.name || row.item || 'S/N',
             code: (row.Código || row.code || row.id || generateId().substring(0, 4)).toString().toUpperCase(),
+            category: (row.Categoría || row.categoria || row.category || '').toString().trim() || undefined,
             basePrice: parsedPrice
           };
         })
@@ -138,7 +146,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, onUpd
                 <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Código</label>
                 <input
                   type="text"
-                  placeholder="Ej. B001"
+                  placeholder="Ej. BLUSA25"
                   className="w-full px-3 py-2 border rounded-lg text-sm"
                   value={code}
                   onChange={e => setCode(e.target.value)}
@@ -146,16 +154,26 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, onUpd
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Nombre</label>
+                <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Nombre del Grupo</label>
                 <input
                   type="text"
-                  placeholder="Ej. Blusa Seda"
+                  placeholder="Ej. Blusas Línea Básica"
                   className="w-full px-3 py-2 border rounded-lg text-sm"
                   value={name}
                   onChange={e => setName(e.target.value)}
                   required
                 />
               </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Categoría (opcional)</label>
+              <input
+                type="text"
+                placeholder="Ej. Blusas"
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+                value={category}
+                onChange={e => setCategory(e.target.value)}
+              />
             </div>
             <div className="flex gap-3">
               <div className="flex-1">
@@ -186,7 +204,11 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, onUpd
                     <span className="bg-slate-100 text-slate-500 text-[10px] font-black px-2 py-0.5 rounded border border-slate-200">{item.code}</span>
                     <div>
                       <span className="font-semibold text-slate-700">{item.name}</span>
-                      <p className="text-xs text-blue-600 font-bold">{formatCurrency(item.basePrice)}</p>
+                      {item.category && <span className="ml-2 text-[9px] text-slate-400 font-bold uppercase">{item.category}</span>}
+                      <p className="text-xs text-blue-600 font-bold">
+                        {formatCurrency(item.basePrice)}
+                        <span className="text-slate-400 font-medium"> · Stock: {stockFor(item.code)}</span>
+                      </p>
                     </div>
                   </div>
                   <button onClick={() => remove(item.id)} className="text-rose-400 hover:text-rose-600 p-2 rounded-full hover:bg-rose-50 transition">

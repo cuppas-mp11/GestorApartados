@@ -34,7 +34,21 @@ export interface InventoryItem {
   id: string;
   name: string;
   code: string;
+  category?: string; // ej. "Blusas", "Pantalones" — opcional, para agrupar y reportar
   basePrice: number;
+}
+
+// Cada entrega de mercadería genera uno o más "lotes" (uno por cada prenda/código
+// que llegó ese día). Varios lotes pueden compartir el mismo "label" si llegaron
+// en la misma entrega (ej. "ENE03").
+export interface Lot {
+  id: string;
+  code: string;
+  label: string; // ej. "ENE03"
+  entryDate: string; // ISO string
+  quantityIn: number;
+  quantityRemaining: number;
+  note?: string;
 }
 
 export interface ReservationItem {

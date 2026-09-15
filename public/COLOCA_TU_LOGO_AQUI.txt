@@ -1,0 +1,8 @@
+Coloca aquí tu archivo de logo con el nombre exacto: logo.png
+
+Recomendaciones:
+- Imagen cuadrada (ej. 512x512 píxeles)
+- Formato PNG con fondo transparente (se verá mejor sobre el fondo verde menta)
+- Una vez que coloques el archivo aquí, bórralo (este archivo .txt), sube los cambios
+  con GitHub Desktop como siempre, y el logo aparecerá automáticamente en el ícono
+  de la app y en la pestaña del navegador.
