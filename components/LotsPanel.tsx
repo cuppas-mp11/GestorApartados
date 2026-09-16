@@ -7,7 +7,7 @@ interface LotsPanelProps {
   lots: Lot[];
   role: UserRole | null;
   onDeleteLot: (id: string) => void;
-  onVerifyLot: (id: string, status: 'confirmed' | 'flagged', note?: string) => void;
+  onVerifyLot: (id: string, status: 'confirmed' | 'flagged' | 'pending', note?: string) => void;
   onCorrectQuantity: (id: string, newQuantityIn: number, newQuantityRemaining: number) => void;
 }
 
@@ -26,6 +26,7 @@ interface LabelGroup {
   totalRemaining: number;
   weeks: number;
   hasFlagged: boolean;
+  pendingCount: number;
 }
 
 export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onDeleteLot, onVerifyLot, onCorrectQuantity }) => {
@@ -45,11 +46,13 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
   const groups: LabelGroup[] = useMemo(() => {
     const map = new Map<string, LabelGroup>();
     for (const lot of lots) {
+      const isPending = lot.verificationStatus !== 'confirmed' && lot.verificationStatus !== 'flagged';
       const existing = map.get(lot.label);
       if (existing) {
         existing.totalIn += lot.quantityIn;
         existing.totalRemaining += lot.quantityRemaining;
         if (lot.verificationStatus === 'flagged') existing.hasFlagged = true;
+        if (isPending) existing.pendingCount += 1;
       } else {
         map.set(lot.label, {
           label: lot.label,
@@ -58,6 +61,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
           totalRemaining: lot.quantityRemaining,
           weeks: getWeeksInStore(lot.entryDate),
           hasFlagged: lot.verificationStatus === 'flagged',
+          pendingCount: isPending ? 1 : 0,
         });
       }
     }
@@ -105,12 +109,17 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
       return (
         <button
           onClick={() => setIsOpen(true)}
-          className="w-full mb-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg transition text-sm flex items-center justify-center gap-2 border border-slate-300"
+          className="relative w-full mb-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg transition text-sm flex items-center justify-center gap-2 border border-slate-300"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           Ver Rotación de Lotes
+          {pendingVerificationCount > 0 && (
+            <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white" title="Lotes sin confirmar por la vendedora">
+              {pendingVerificationCount}
+            </span>
+          )}
         </button>
       );
     }
@@ -137,11 +146,14 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
         <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <div>
-              <button onClick={() => setSelectedLabel(null)} className="text-[10px] text-blue-500 font-black uppercase mb-1">← Volver al panorama</button>
-              <h2 className="text-lg font-bold text-slate-800">Lote {selectedLabel}</h2>
-            </div>
+          <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 gap-3">
+            <button
+              onClick={() => setSelectedLabel(null)}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg shrink-0"
+            >
+              ← Volver
+            </button>
+            <h2 className="text-lg font-bold text-slate-800 flex-1">Lote {selectedLabel}</h2>
             <button onClick={close} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
           </div>
 
@@ -187,7 +199,15 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                   {/* ---- Verificación cruzada ---- */}
                   <div className="mt-2 pt-2 border-t border-current/10">
                     {status === 'confirmed' && (
-                      <p className="text-[10px] font-black text-emerald-700">✓ Confirmado por {lot.verifiedByEmail}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black text-emerald-700">✓ Confirmado por {lot.verifiedByEmail}</p>
+                        <button
+                          onClick={() => { if (confirm('¿Deshacer esta confirmación? Volverá a quedar pendiente.')) onVerifyLot(lot.id, 'pending'); }}
+                          className="text-[9px] font-bold underline opacity-60 hover:opacity-100"
+                        >
+                          Deshacer
+                        </button>
+                      </div>
                     )}
 
                     {status === 'flagged' && (
@@ -374,6 +394,11 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                     >
                       {g.hasFlagged && (
                         <span className="absolute -top-2 -right-2 bg-[#8c3a4b] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center" title="Hay un reporte pendiente">!</span>
+                      )}
+                      {g.pendingCount > 0 && (
+                        <span className="absolute -top-2 -left-2 bg-amber-500 text-white text-[9px] font-black min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center" title={`${g.pendingCount} prenda(s) sin confirmar por la vendedora`}>
+                          {g.pendingCount}
+                        </span>
                       )}
                       <span className="text-sm font-black block">{g.label}</span>
                       <div className="grid grid-cols-2 gap-1 mt-2">

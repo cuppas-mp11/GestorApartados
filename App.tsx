@@ -182,7 +182,7 @@ const App: React.FC = () => {
   };
 
   // La vendedora confirma o reporta un problema al recibir la mercadería
-  const verifyLot = async (id: string, status: 'confirmed' | 'flagged', note?: string) => {
+  const verifyLot = async (id: string, status: 'confirmed' | 'flagged' | 'pending', note?: string) => {
     await updateDoc(doc(db, LOTS_COLLECTION, id), {
       verificationStatus: status,
       verificationNote: status === 'flagged' ? (note || '') : '',
