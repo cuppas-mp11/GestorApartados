@@ -103,6 +103,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
   };
 
   const pendingVerificationCount = lots.filter((l) => l.verificationStatus !== 'confirmed' && l.verificationStatus !== 'flagged').length;
+  const flaggedCount = lots.filter((l) => l.verificationStatus === 'flagged').length;
 
   if (!isOpen) {
     if (role === 'admin') {
@@ -115,9 +116,9 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           Ver Rotación de Lotes
-          {pendingVerificationCount > 0 && (
-            <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white" title="Lotes sin confirmar por la vendedora">
-              {pendingVerificationCount}
+          {flaggedCount > 0 && (
+            <span className="absolute -top-2 -right-2 bg-[#8c3a4b] text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white" title="Reportes de la vendedora pendientes de corregir">
+              {flaggedCount}
             </span>
           )}
         </button>
