@@ -20,6 +20,7 @@ import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
 import { Login } from './components/Login';
+import { Sidebar, Page } from './components/Sidebar';
 import { isOverdue, generateId, getTotalPrice, getTotalPaid, getNextCustomerCode } from './utils';
 
 const RESERVATIONS_COLLECTION = 'reservations';
@@ -39,7 +40,9 @@ const App: React.FC = () => {
   const [lots, setLots] = useState<Lot[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'CANCELLED' | 'DELETED'>('ALL');
-  const [logoFailed, setLogoFailed] = useState(false);
+
+  const [page, setPage] = useState<Page>('inicio');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -62,7 +65,6 @@ const App: React.FC = () => {
         if (snap.exists()) {
           setRole((snap.data().role as UserRole) || 'employee');
         } else {
-          // Si no tiene un rol asignado todavía, se trata como "employee" (el más restringido) por seguridad
           setRole('employee');
         }
         setRoleLoading(false);
@@ -165,14 +167,12 @@ const App: React.FC = () => {
     await deleteDoc(doc(db, CUSTOMERS_COLLECTION, id));
   };
 
-  // Registra una entrega de mercadería: guarda uno o más lotes de una sola vez
   const addStockEntry = async (newLots: Lot[]) => {
     for (const lot of newLots) {
       await setDoc(doc(db, LOTS_COLLECTION, lot.id), lot);
     }
   };
 
-  // Solo un administrador puede eliminar un lote (ej. error de captura)
   const deleteLot = async (id: string) => {
     if (role !== 'admin') {
       alert('Solo un administrador puede eliminar lotes.');
@@ -181,7 +181,6 @@ const App: React.FC = () => {
     await deleteDoc(doc(db, LOTS_COLLECTION, id));
   };
 
-  // La vendedora confirma o reporta un problema al recibir la mercadería
   const verifyLot = async (id: string, status: 'confirmed' | 'flagged' | 'pending', note?: string) => {
     await updateDoc(doc(db, LOTS_COLLECTION, id), {
       verificationStatus: status,
@@ -191,9 +190,6 @@ const App: React.FC = () => {
     });
   };
 
-  // Solo un administrador puede corregir la cantidad de un lote ya reportado con problema.
-  // Se recibe tanto la nueva cantidad ingresada como la nueva cantidad restante (ya
-  // ajustada por quien llama), para no perder ventas que ya se hayan descontado de ese lote.
   const correctLotQuantity = async (id: string, newQuantityIn: number, newQuantityRemaining: number) => {
     if (role !== 'admin') {
       alert('Solo un administrador puede corregir cantidades.');
@@ -233,10 +229,6 @@ const App: React.FC = () => {
     });
   };
 
-  // Antes borraba el documento para siempre. Ahora lo "archiva" (soft-delete):
-  // el registro sigue existiendo y aparece en la pestaña "Eliminados" del historial.
-  // Las reglas de Firebase (ver GUIA_FIREBASE.md) impiden que alguien sin rol
-  // "admin" pueda completar esta acción, aunque intente saltarse el botón.
   const deleteReservation = async (id: string) => {
     if (role !== 'admin') {
       alert('Solo un administrador puede eliminar registros.');
@@ -251,9 +243,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Corrige un dato de un apartado (ej. nombre o teléfono mal escritos) y deja
-  // constancia de quién hizo el cambio y cuándo, tanto en el registro como en
-  // una colección aparte de historial de ediciones.
   const editReservationField = async (
     id: string,
     field: 'customerName' | 'phoneNumber',
@@ -304,12 +293,14 @@ const App: React.FC = () => {
     if (filter === 'PAID') return res.status === ReservationStatus.PAID;
     if (filter === 'CANCELLED') return res.status === ReservationStatus.CANCELLED;
     if (filter === 'DELETED') return res.status === ReservationStatus.DELETED;
-    // 'ALL' (Todos): todo excepto lo archivado/eliminado, para mantener limpia la vista principal
     return res.status !== ReservationStatus.DELETED;
   });
 
   const nextCorrelative = reservations.length > 0 ? Math.max(...reservations.map((r) => r.correlative)) + 1 : 1;
   const overdueCount = reservations.filter((r) => r.status === ReservationStatus.PENDING && isOverdue(r.date)).length;
+  const activeReservationsCount = reservations.filter((r) => r.status === ReservationStatus.PENDING).length;
+  const pendingLotsCount = lots.filter((l) => l.verificationStatus !== 'confirmed' && l.verificationStatus !== 'flagged').length;
+  const flaggedLotsCount = lots.filter((l) => l.verificationStatus === 'flagged').length;
 
   if (authLoading) {
     return (
@@ -329,50 +320,39 @@ const App: React.FC = () => {
     );
   }
 
+  const pageTitles: Record<Page, string> = {
+    inicio: 'Inicio',
+    apartados: 'Apartados',
+    inventario: 'Inventario',
+    clientes: 'Clientes',
+  };
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <header className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="bg-[#2bb297] rounded-2xl shadow-xl shadow-[#2bb297]/30 w-14 h-14 flex items-center justify-center overflow-hidden">
-              {!logoFailed ? (
-                <img
-                  src="/logo.png"
-                  alt="Logo"
-                  className="w-full h-full object-contain"
-                  onError={() => setLogoFailed(true)}
-                />
-              ) : (
-                <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
-                </svg>
-              )}
-            </div>
-            <div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Gestor de Apartados</h1>
-              <p className="mt-1 text-slate-500 font-medium">Vestimenta GT</p>
-            </div>
+    <div className="min-h-screen bg-[#f8fafc] lg:flex">
+      <Sidebar page={page} setPage={setPage} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      <div className="flex-1 min-w-0">
+        {/* Barra superior */}
+        <header className="bg-white border-b border-slate-100 px-4 sm:px-6 py-4 flex items-center justify-between gap-3 sticky top-0 z-30">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-500 hover:text-slate-700">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <h1 className="text-lg font-black text-slate-900">{pageTitles[page]}</h1>
           </div>
 
           <div className="flex items-center gap-3">
-            <ExportMenu reservations={reservations} />
             {overdueCount > 0 && (
-              <div className="bg-rose-100 border border-rose-200 px-4 py-2 rounded-xl flex items-center gap-3 animate-pulse">
+              <div className="hidden sm:flex bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-xl items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-rose-600"></div>
-                <p className="text-rose-700 text-sm font-black">{overdueCount} ALERTAS DE VENCIMIENTO</p>
+                <p className="text-rose-700 text-xs font-black">{overdueCount} VENCIDOS</p>
               </div>
             )}
-            <span
-              className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
-                role === 'admin' ? 'bg-[#8c3a4b]/10 text-[#8c3a4b] border border-[#8c3a4b]/30' : 'bg-[#2bb297]/10 text-[#1a8a72] border border-[#2bb297]/30'
-              }`}
-              title={user.email || ''}
-            >
-              {role === 'admin' ? 'Admin' : 'Tienda'}
-            </span>
             <button
               onClick={() => signOut(auth)}
-              className="text-xs font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest px-3 py-2"
+              className="text-xs font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2 py-2"
               title={user.email || ''}
             >
               Cerrar sesión
@@ -380,90 +360,133 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <Stats reservations={reservations} />
+        <main className="p-4 sm:p-6 lg:p-8">
+          {/* ---------------- PÁGINA: INICIO ---------------- */}
+          {page === 'inicio' && (
+            <div>
+              <Stats reservations={reservations} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          <div className="lg:col-span-1 space-y-4">
-            <InventoryManager items={inventory} lots={lots} onUpdate={handleInventoryUpdate} />
-            {role === 'admin' && (
-              <StockEntryForm
-                inventory={inventory}
-                onSubmit={addStockEntry}
-              />
-            )}
-            <LotsPanel
-              inventory={inventory}
-              lots={lots}
-              role={role}
-              onDeleteLot={deleteLot}
-              onVerifyLot={verifyLot}
-              onCorrectQuantity={correctLotQuantity}
-            />
-            <CustomerManager customers={customers} onUpdate={updateCustomer} onDelete={deleteCustomer} />
-            <CustomerBalances reservations={reservations} />
-            <ReservationForm
-              onAdd={addReservation}
-              inventory={inventory}
-              nextCorrelative={nextCorrelative}
-              customers={customers}
-            />
-          </div>
+              <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3 mt-8">Accesos rápidos</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <button
+                  onClick={() => setPage('apartados')}
+                  className="relative bg-white p-5 rounded-2xl border border-slate-200 text-left hover:shadow-md hover:border-[#2bb297]/40 transition"
+                >
+                  <div className="bg-[#2bb297]/10 w-10 h-10 rounded-xl flex items-center justify-center mb-3">
+                    <svg className="w-5 h-5 text-[#1a8a72]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                    </svg>
+                  </div>
+                  <p className="font-black text-slate-800">Apartados</p>
+                  <p className="text-xs text-slate-400 font-bold mt-1">{activeReservationsCount} activo(s)</p>
+                  {overdueCount > 0 && (
+                    <span className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{overdueCount}</span>
+                  )}
+                </button>
 
-          <div className="lg:col-span-3">
-            <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
-              <div className="flex flex-wrap p-1 bg-slate-50 rounded-xl w-full sm:w-auto gap-1">
                 <button
-                  onClick={() => setFilter('ALL')}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'ALL' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  onClick={() => setPage('inventario')}
+                  className="relative bg-white p-5 rounded-2xl border border-slate-200 text-left hover:shadow-md hover:border-[#2bb297]/40 transition"
                 >
-                  TODOS
+                  <div className="bg-[#2bb297]/10 w-10 h-10 rounded-xl flex items-center justify-center mb-3">
+                    <svg className="w-5 h-5 text-[#1a8a72]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                    </svg>
+                  </div>
+                  <p className="font-black text-slate-800">Inventario</p>
+                  <p className="text-xs text-slate-400 font-bold mt-1">{inventory.length} prenda(s) en catálogo</p>
+                  {role === 'admin' && flaggedLotsCount > 0 && (
+                    <span className="absolute top-4 right-4 bg-[#8c3a4b] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{flaggedLotsCount}</span>
+                  )}
+                  {role !== 'admin' && pendingLotsCount > 0 && (
+                    <span className="absolute top-4 right-4 bg-amber-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{pendingLotsCount}</span>
+                  )}
                 </button>
+
                 <button
-                  onClick={() => setFilter('PENDING')}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PENDING' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  onClick={() => setPage('clientes')}
+                  className="bg-white p-5 rounded-2xl border border-slate-200 text-left hover:shadow-md hover:border-[#2bb297]/40 transition"
                 >
-                  PENDIENTES
+                  <div className="bg-[#2bb297]/10 w-10 h-10 rounded-xl flex items-center justify-center mb-3">
+                    <svg className="w-5 h-5 text-[#1a8a72]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a4 4 0 10-4-4" />
+                    </svg>
+                  </div>
+                  <p className="font-black text-slate-800">Clientes</p>
+                  <p className="text-xs text-slate-400 font-bold mt-1">{customers.length} registrado(s)</p>
                 </button>
-                <button
-                  onClick={() => setFilter('OVERDUE')}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'OVERDUE' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  VENCIDOS
-                </button>
-                <button
-                  onClick={() => setFilter('PAID')}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PAID' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  LIQUIDADOS
-                </button>
-                <button
-                  onClick={() => setFilter('CANCELLED')}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'CANCELLED' ? 'bg-slate-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  LIBERADOS
-                </button>
-                <button
-                  onClick={() => setFilter('DELETED')}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'DELETED' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  ELIMINADOS
-                </button>
-              </div>
-              <div className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                Mostrando {filteredReservations.length} de {reservations.length} registros
               </div>
             </div>
+          )}
 
-            <ReservationTable
-              reservations={filteredReservations}
-              onUpdateStatus={updateStatus}
-              onDelete={deleteReservation}
-              onAddPayment={addPayment}
-              onEditField={editReservationField}
-              role={role}
-            />
-          </div>
-        </div>
+          {/* ---------------- PÁGINA: APARTADOS ---------------- */}
+          {page === 'apartados' && (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              <div className="lg:col-span-1 space-y-4">
+                <ReservationForm
+                  onAdd={addReservation}
+                  inventory={inventory}
+                  nextCorrelative={nextCorrelative}
+                  customers={customers}
+                />
+              </div>
+
+              <div className="lg:col-span-3">
+                <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
+                  <div className="flex flex-wrap p-1 bg-slate-50 rounded-xl w-full sm:w-auto gap-1">
+                    <button onClick={() => setFilter('ALL')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'ALL' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>TODOS</button>
+                    <button onClick={() => setFilter('PENDING')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PENDING' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>PENDIENTES</button>
+                    <button onClick={() => setFilter('OVERDUE')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'OVERDUE' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>VENCIDOS</button>
+                    <button onClick={() => setFilter('PAID')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PAID' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>LIQUIDADOS</button>
+                    <button onClick={() => setFilter('CANCELLED')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'CANCELLED' ? 'bg-slate-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>LIBERADOS</button>
+                    <button onClick={() => setFilter('DELETED')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'DELETED' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ELIMINADOS</button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <ExportMenu reservations={reservations} />
+                  </div>
+                </div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+                  Mostrando {filteredReservations.length} de {reservations.length} registros
+                </p>
+
+                <ReservationTable
+                  reservations={filteredReservations}
+                  onUpdateStatus={updateStatus}
+                  onDelete={deleteReservation}
+                  onAddPayment={addPayment}
+                  onEditField={editReservationField}
+                  role={role}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ---------------- PÁGINA: INVENTARIO ---------------- */}
+          {page === 'inventario' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+              <InventoryManager items={inventory} lots={lots} onUpdate={handleInventoryUpdate} />
+              {role === 'admin' && (
+                <StockEntryForm inventory={inventory} onSubmit={addStockEntry} />
+              )}
+              <LotsPanel
+                inventory={inventory}
+                lots={lots}
+                role={role}
+                onDeleteLot={deleteLot}
+                onVerifyLot={verifyLot}
+                onCorrectQuantity={correctLotQuantity}
+              />
+            </div>
+          )}
+
+          {/* ---------------- PÁGINA: CLIENTES ---------------- */}
+          {page === 'clientes' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
+              <CustomerManager customers={customers} onUpdate={updateCustomer} onDelete={deleteCustomer} />
+              <CustomerBalances reservations={reservations} />
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );
