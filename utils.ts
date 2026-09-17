@@ -1,4 +1,4 @@
-import { Reservation } from './types';
+import { Reservation, Lot, Sale, SaleItem, PaymentMethod } from './types';
 
 // Plazo de vencimiento centralizado (antes estaba repetido en 3 archivos distintos)
 export const DEADLINE_DAYS = 15;
@@ -100,3 +100,49 @@ export const getNextCustomerCode = (customers: { code: string }[]): string => {
   const last = nums.length > 0 ? Math.max(...nums) : 0;
   return `C${String(last + 1).padStart(3, '0')}`;
 };
+
+// ---- Stock (Fase 2) ----
+
+// Stock disponible de una prenda: suma de lo que queda en todos sus lotes.
+// A partir de Fase 2, esto ya descuenta lo apartado y lo vendido.
+export const getStockForCode = (code: string, lots: Lot[]): number =>
+  lots.filter((l) => l.code === code).reduce((acc, l) => acc + l.quantityRemaining, 0);
+
+export interface StockNeed { code: string; quantity: number }
+
+// Suma cantidades repetidas del mismo código (ej. si el usuario agregó la misma
+// prenda en dos líneas distintas de un mismo apartado/venta).
+export const aggregateStockNeeds = (needs: StockNeed[]): StockNeed[] => {
+  const map = new Map<string, number>();
+  for (const n of needs) map.set(n.code, (map.get(n.code) || 0) + n.quantity);
+  return Array.from(map.entries()).map(([code, quantity]) => ({ code, quantity }));
+};
+
+// Lotes candidatos de un código, del más antiguo al más nuevo (FIFO), para
+// descontar stock respetando el orden de rotación de mercadería.
+export const getCandidateLotsForCode = (code: string, lots: Lot[]): Lot[] =>
+  lots
+    .filter((l) => l.code === code)
+    .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
+
+// ---- Ventas directas (Fase 2) ----
+
+export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: 'cash', label: 'Efectivo' },
+  { value: 'transfer', label: 'Transferencia' },
+  { value: 'card', label: 'Tarjeta' },
+  { value: 'other', label: 'Otro' },
+];
+
+export const paymentMethodLabel = (method: PaymentMethod): string =>
+  PAYMENT_METHODS.find((p) => p.value === method)?.label || method;
+
+// Total de una línea de venta, ya restando el descuento por desperfecto (si hay)
+export const getSaleItemTotal = (item: SaleItem): number =>
+  Math.max(0, item.pricePerUnit * item.quantity - (item.discount || 0));
+
+export const getSaleTotal = (sale: Sale): number =>
+  sale.items.reduce((acc, it) => acc + getSaleItemTotal(it), 0);
+
+export const getSaleItemsCount = (sale: Sale): number =>
+  sale.items.reduce((acc, it) => acc + it.quantity, 0);

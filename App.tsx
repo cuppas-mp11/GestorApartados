@@ -7,9 +7,22 @@ import {
   setDoc,
   deleteDoc,
   updateDoc,
+  runTransaction,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { Reservation, ReservationStatus, InventoryItem, Payment, UserRole, EditLogEntry, Customer, Lot } from './types';
+import {
+  Reservation,
+  ReservationStatus,
+  InventoryItem,
+  Payment,
+  UserRole,
+  EditLogEntry,
+  Customer,
+  Lot,
+  Sale,
+  SaleStatus,
+  StockAllocation,
+} from './types';
 import { ReservationForm } from './components/ReservationForm';
 import { ReservationTable } from './components/ReservationTable';
 import { Stats } from './components/Stats';
@@ -19,14 +32,26 @@ import { LotsPanel } from './components/LotsPanel';
 import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
+import { SaleForm } from './components/SaleForm';
+import { SalesHistory } from './components/SalesHistory';
+import { SalesStats } from './components/SalesStats';
 import { Login } from './components/Login';
 import { Sidebar, Page } from './components/Sidebar';
-import { isOverdue, generateId, getTotalPrice, getTotalPaid, getNextCustomerCode } from './utils';
+import {
+  isOverdue,
+  generateId,
+  getTotalPrice,
+  getTotalPaid,
+  getNextCustomerCode,
+  aggregateStockNeeds,
+  getCandidateLotsForCode,
+} from './utils';
 
 const RESERVATIONS_COLLECTION = 'reservations';
 const INVENTORY_COLLECTION = 'inventory';
 const CUSTOMERS_COLLECTION = 'customers';
 const LOTS_COLLECTION = 'lots';
+const SALES_COLLECTION = 'sales';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -38,6 +63,7 @@ const App: React.FC = () => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [lots, setLots] = useState<Lot[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'CANCELLED' | 'DELETED'>('ALL');
 
@@ -119,13 +145,90 @@ const App: React.FC = () => {
       (error) => console.error('Error leyendo lotes:', error)
     );
 
+    const unsubSales = onSnapshot(
+      collection(db, SALES_COLLECTION),
+      (snapshot) => {
+        const data = snapshot.docs.map((d) => d.data() as Sale);
+        data.sort((a, b) => b.correlative - a.correlative);
+        setSales(data);
+      },
+      (error) => console.error('Error leyendo ventas:', error)
+    );
+
     return () => {
       unsubReservations();
       unsubInventory();
       unsubCustomers();
       unsubLots();
+      unsubSales();
     };
   }, [user]);
+
+  // ---- Motor de stock (Fase 2) ----
+  // Descuenta stock de los lotes más antiguos primero (FIFO), dentro de una
+  // transacción de Firestore para que dos ventas/apartados simultáneos no
+  // puedan "vender" la misma prenda dos veces. Si no alcanza, no escribe nada
+  // y lanza un error con el mensaje para mostrarle a quien está vendiendo.
+  const allocateAndDecrementStock = async (
+    needs: { code: string; quantity: number }[]
+  ): Promise<StockAllocation[]> => {
+    const aggregated = aggregateStockNeeds(needs);
+    let allocations: StockAllocation[] = [];
+
+    await runTransaction(db, async (transaction) => {
+      allocations = [];
+      const updates: { ref: ReturnType<typeof doc>; newRemaining: number }[] = [];
+
+      for (const need of aggregated) {
+        const candidates = getCandidateLotsForCode(need.code, lots);
+        let remaining = need.quantity;
+
+        for (const lot of candidates) {
+          if (remaining <= 0) break;
+          const ref = doc(db, LOTS_COLLECTION, lot.id);
+          const snap = await transaction.get(ref);
+          if (!snap.exists()) continue;
+          const fresh = snap.data() as Lot;
+          const take = Math.min(fresh.quantityRemaining, remaining);
+          if (take > 0) {
+            updates.push({ ref, newRemaining: fresh.quantityRemaining - take });
+            allocations.push({ lotId: lot.id, code: need.code, quantity: take });
+            remaining -= take;
+          }
+        }
+
+        if (remaining > 0) {
+          const item = inventory.find((i) => i.code === need.code);
+          const available = need.quantity - remaining;
+          throw new Error(
+            `No hay suficiente stock de "${item?.name || need.code}". Disponible: ${available}, se necesitaban ${need.quantity}.`
+          );
+        }
+      }
+
+      for (const u of updates) {
+        transaction.update(u.ref, { quantityRemaining: u.newRemaining });
+      }
+    });
+
+    return allocations;
+  };
+
+  // Devuelve stock a los lotes de origen (al liberar/eliminar un apartado o
+  // anular una venta). Si algún lote ya no existe (fue borrado por un admin),
+  // simplemente se omite esa porción.
+  const restoreStock = async (allocations?: StockAllocation[]) => {
+    if (!allocations || allocations.length === 0) return;
+    await runTransaction(db, async (transaction) => {
+      const refs = allocations.map((a) => doc(db, LOTS_COLLECTION, a.lotId));
+      const snaps = await Promise.all(refs.map((r) => transaction.get(r)));
+      snaps.forEach((snap, idx) => {
+        if (!snap.exists()) return;
+        const fresh = snap.data() as Lot;
+        transaction.update(refs[idx], { quantityRemaining: fresh.quantityRemaining + allocations[idx].quantity });
+      });
+    });
+  };
 
   // Antes de guardar el apartado, asegura que exista un perfil de cliente
   // (o lo actualiza si el teléfono cambió), y le asigna el código correcto.
@@ -152,10 +255,16 @@ const App: React.FC = () => {
       await setDoc(doc(db, CUSTOMERS_COLLECTION, newCustomer.id), newCustomer);
     }
 
+    // Descuenta el stock de las prendas apartadas (lanza error si no alcanza,
+    // y en ese caso no se guarda el apartado — ReservationForm muestra el aviso).
+    const needs = reservation.items.map((it) => ({ code: it.code, quantity: it.quantity }));
+    const stockAllocations = await allocateAndDecrementStock(needs);
+
     await setDoc(doc(db, RESERVATIONS_COLLECTION, reservation.id), {
       ...reservation,
       customerName: trimmedName,
       customerCode,
+      stockAllocations,
     });
   };
 
@@ -210,6 +319,21 @@ const App: React.FC = () => {
       ? 'marcar este apartado como LIQUIDADO'
       : 'LIBERAR la prenda (cancelar este apartado)';
     if (!confirm(`¿Confirmas que deseas ${label}?`)) return;
+
+    const res = reservations.find((r) => r.id === id);
+
+    // Al liberar (cancelar) un apartado, la prenda vuelve a estar disponible:
+    // se devuelve el stock que se había descontado al crearlo.
+    if (status === ReservationStatus.CANCELLED && res && !res.stockRestored && res.stockAllocations?.length) {
+      try {
+        await restoreStock(res.stockAllocations);
+        await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), { status, stockRestored: true });
+        return;
+      } catch (err) {
+        console.error('Error devolviendo stock al liberar el apartado:', err);
+      }
+    }
+
     await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), { status });
   };
 
@@ -234,13 +358,28 @@ const App: React.FC = () => {
       alert('Solo un administrador puede eliminar registros.');
       return;
     }
-    if (confirm('¿Estás seguro de que deseas eliminar este registro? Pasará al historial de eliminados.')) {
-      await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), {
-        status: ReservationStatus.DELETED,
-        deletedAt: new Date().toISOString(),
-        deletedByEmail: user?.email || 'desconocido',
-      });
+    if (!confirm('¿Estás seguro de que deseas eliminar este registro? Pasará al historial de eliminados.')) return;
+
+    const res = reservations.find((r) => r.id === id);
+    const updates: Record<string, unknown> = {
+      status: ReservationStatus.DELETED,
+      deletedAt: new Date().toISOString(),
+      deletedByEmail: user?.email || 'desconocido',
+    };
+
+    // Solo se devuelve el stock si la prenda seguía físicamente en la tienda
+    // (apartado aún PENDIENTE). Si ya estaba LIQUIDADO, la prenda ya salió de
+    // la tienda con la clienta y no debe volver a aparecer como disponible.
+    if (res && res.status === ReservationStatus.PENDING && !res.stockRestored && res.stockAllocations?.length) {
+      try {
+        await restoreStock(res.stockAllocations);
+        updates.stockRestored = true;
+      } catch (err) {
+        console.error('Error devolviendo stock al eliminar el apartado:', err);
+      }
     }
+
+    await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), updates);
   };
 
   const editReservationField = async (
@@ -274,6 +413,49 @@ const App: React.FC = () => {
     await setDoc(doc(db, 'editLogs', logEntry.id), logEntry);
   };
 
+  // Registra una venta directa (mostrador): descuenta stock igual que un
+  // apartado, pero de una vez (no hay saldo pendiente ni abonos).
+  const addSale = async (
+    saleDraft: Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>
+  ) => {
+    const needs = saleDraft.items.map((it) => ({ code: it.code, quantity: it.quantity }));
+    const stockAllocations = await allocateAndDecrementStock(needs);
+
+    const newSale: Sale = {
+      ...saleDraft,
+      id: generateId(),
+      correlative: nextSaleCorrelative,
+      soldByEmail: user?.email || 'desconocido',
+      status: SaleStatus.COMPLETED,
+      stockAllocations,
+    };
+
+    await setDoc(doc(db, SALES_COLLECTION, newSale.id), newSale);
+  };
+
+  const cancelSale = async (id: string) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede anular una venta.');
+      return;
+    }
+    if (!confirm('¿Confirmas que deseas anular esta venta? El stock vendido regresará al inventario.')) return;
+
+    const sale = sales.find((s) => s.id === id);
+    if (!sale || sale.status === SaleStatus.CANCELLED) return;
+
+    try {
+      await restoreStock(sale.stockAllocations);
+    } catch (err) {
+      console.error('Error devolviendo stock de la venta anulada:', err);
+    }
+
+    await updateDoc(doc(db, SALES_COLLECTION, id), {
+      status: SaleStatus.CANCELLED,
+      cancelledAt: new Date().toISOString(),
+      cancelledByEmail: user?.email || 'desconocido',
+    });
+  };
+
   const handleInventoryUpdate = async (newItems: InventoryItem[]) => {
     const existingIds = new Set(inventory.map((i) => i.id));
     const added = newItems.filter((i) => !existingIds.has(i.id));
@@ -297,10 +479,13 @@ const App: React.FC = () => {
   });
 
   const nextCorrelative = reservations.length > 0 ? Math.max(...reservations.map((r) => r.correlative)) + 1 : 1;
+  const nextSaleCorrelative = sales.length > 0 ? Math.max(...sales.map((s) => s.correlative)) + 1 : 1;
   const overdueCount = reservations.filter((r) => r.status === ReservationStatus.PENDING && isOverdue(r.date)).length;
   const activeReservationsCount = reservations.filter((r) => r.status === ReservationStatus.PENDING).length;
   const pendingLotsCount = lots.filter((l) => l.verificationStatus !== 'confirmed' && l.verificationStatus !== 'flagged').length;
   const flaggedLotsCount = lots.filter((l) => l.verificationStatus === 'flagged').length;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const salesToday = sales.filter((s) => s.status === SaleStatus.COMPLETED && s.date.startsWith(todayStr));
 
   if (authLoading) {
     return (
@@ -323,6 +508,7 @@ const App: React.FC = () => {
   const pageTitles: Record<Page, string> = {
     inicio: 'Inicio',
     apartados: 'Apartados',
+    ventas: 'Ventas',
     inventario: 'Inventario',
     clientes: 'Clientes',
   };
@@ -367,7 +553,7 @@ const App: React.FC = () => {
               <Stats reservations={reservations} />
 
               <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3 mt-8">Accesos rápidos</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <button
                   onClick={() => setPage('apartados')}
                   className="relative bg-white p-5 rounded-2xl border border-slate-200 text-left hover:shadow-md hover:border-[#2bb297]/40 transition"
@@ -382,6 +568,19 @@ const App: React.FC = () => {
                   {overdueCount > 0 && (
                     <span className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{overdueCount}</span>
                   )}
+                </button>
+
+                <button
+                  onClick={() => setPage('ventas')}
+                  className="relative bg-white p-5 rounded-2xl border border-slate-200 text-left hover:shadow-md hover:border-[#2bb297]/40 transition"
+                >
+                  <div className="bg-[#c9a876]/15 w-10 h-10 rounded-xl flex items-center justify-center mb-3">
+                    <svg className="w-5 h-5 text-[#8a6a3f]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h5M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" />
+                    </svg>
+                  </div>
+                  <p className="font-black text-slate-800">Ventas</p>
+                  <p className="text-xs text-slate-400 font-bold mt-1">{salesToday.length} hoy</p>
                 </button>
 
                 <button
@@ -426,6 +625,7 @@ const App: React.FC = () => {
                 <ReservationForm
                   onAdd={addReservation}
                   inventory={inventory}
+                  lots={lots}
                   nextCorrelative={nextCorrelative}
                   customers={customers}
                 />
@@ -457,6 +657,21 @@ const App: React.FC = () => {
                   onEditField={editReservationField}
                   role={role}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* ---------------- PÁGINA: VENTAS ---------------- */}
+          {page === 'ventas' && (
+            <div>
+              <SalesStats sales={sales} />
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 mt-6">
+                <div className="lg:col-span-1 space-y-4">
+                  <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} />
+                </div>
+                <div className="lg:col-span-3">
+                  <SalesHistory sales={sales} onCancel={cancelSale} role={role} />
+                </div>
               </div>
             </div>
           )}

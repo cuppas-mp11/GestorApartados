@@ -125,11 +125,42 @@ service cloud.firestore {
       allow read, create: if request.auth != null;
       allow update, delete: if false;
     }
+    match /sales/{id} {
+      allow read, create: if request.auth != null;
+      // Solo un admin puede anular una venta (equivalente a "eliminar" en apartados)
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if false;
+    }
   }
 }
 ```
 
 Clic en **"Publicar"**. Esta regla es la que de verdad protege el sistema: aunque alguien intente forzar la eliminación desde fuera de la pantalla, Firebase lo rechazará si su correo no tiene rol "admin".
+
+---
+
+## Paso 8: Fase 2 — Ventas directas (colección `sales`)
+
+Con la Fase 2 se agregó una colección nueva, `sales`, para las ventas de mostrador (las que no pasan por un apartado). **Ya está incluida en las reglas del Paso 7 de arriba** — si copiaste esas reglas completas, no necesitas hacer nada más aquí.
+
+Si ya tenías las reglas del Paso 7 publicadas de antes y solo quieres agregar la parte nueva, entra a **Firestore Database → Reglas** y agrega este bloque dentro de `match /databases/{database}/documents { ... }` (junto a los demás `match`):
+
+```
+    match /sales/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if false;
+    }
+```
+
+**Qué cambió en el sistema con la Fase 2:**
+
+- Ahora **tanto los apartados como las ventas directas descuentan stock real** de los lotes de mercadería (antes, en Fase 1, el stock nunca se restaba automáticamente). El descuento toma primero los lotes más antiguos de esa prenda (FIFO), respetando el orden de rotación.
+- Si liberas un apartado (o lo eliminas mientras seguía pendiente), el stock que se había descontado se devuelve automáticamente.
+- Si un admin anula una venta desde la pantalla de Ventas, también se devuelve el stock vendido.
+- ⚠️ Los apartados que ya existían **antes** de este cambio nunca descontaron stock, así que no tienen nada que "devolver" — esto no rompe nada, pero significa que el conteo de stock empieza a ser exacto desde que actualices el código, no retroactivamente.
 
 2. Ve a **Authentication → Users** y copia el **UID** de cada uno de tus 3 usuarios (es un código largo de letras y números, aparece en la columna "User UID").
 

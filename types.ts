@@ -72,6 +72,15 @@ export interface Payment {
   note?: string;
 }
 
+// Registro de qué lote(s) se descontaron para cubrir un apartado o una venta.
+// Guardarlo permite devolver el stock exacto si el apartado se libera/elimina
+// o si la venta se anula, sin tener que adivinar de qué lote salió.
+export interface StockAllocation {
+  lotId: string;
+  code: string;
+  quantity: number;
+}
+
 export interface Reservation {
   id: string;
   correlative: number;
@@ -89,4 +98,46 @@ export interface Reservation {
   // Rastro de última corrección manual
   lastEditedAt?: string;
   lastEditedByEmail?: string;
+  // De qué lote(s) se descontó el stock al crear este apartado (Fase 2).
+  // Si está vacío/ausente, es un apartado viejo de antes de Fase 2 (nunca descontó stock).
+  stockAllocations?: StockAllocation[];
+  // Se marca true una vez que el stock ya fue devuelto (al liberar o eliminar),
+  // para no devolverlo dos veces.
+  stockRestored?: boolean;
+}
+
+// ---- Fase 2: Ventas directas (mostrador) ----
+
+export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'other';
+
+export enum SaleStatus {
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export interface SaleItem {
+  id: string;
+  garmentId: string;
+  name: string;
+  code: string;
+  quantity: number;
+  pricePerUnit: number;
+  // Descuento en Quetzales aplicado a esta línea completa (ej. por desperfecto).
+  discount: number;
+}
+
+export interface Sale {
+  id: string;
+  correlative: number;
+  date: string; // ISO
+  items: SaleItem[];
+  paymentMethod: PaymentMethod;
+  customerName?: string;
+  note?: string;
+  soldByEmail: string;
+  status: SaleStatus;
+  stockAllocations: StockAllocation[];
+  cancelledAt?: string;
+  cancelledByEmail?: string;
+  cancelReason?: string;
 }

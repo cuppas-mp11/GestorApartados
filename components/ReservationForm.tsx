@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Reservation, ReservationStatus, InventoryItem, ReservationItem, Customer } from '../types';
-import { generateId, formatCurrency, parseLocalDateInput } from '../utils';
+import { Reservation, ReservationStatus, InventoryItem, ReservationItem, Customer, Lot } from '../types';
+import { generateId, formatCurrency, parseLocalDateInput, getStockForCode } from '../utils';
 
 interface ReservationFormProps {
-  onAdd: (reservation: Reservation) => void;
+  onAdd: (reservation: Reservation) => Promise<void>;
   inventory: InventoryItem[];
+  lots: Lot[];
   nextCorrelative: number;
   customers: Customer[];
 }
 
-export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, inventory, nextCorrelative, customers }) => {
+export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, inventory, lots, nextCorrelative, customers }) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneError, setPhoneError] = useState('');
@@ -21,6 +24,17 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
   const [depositAmount, setDepositAmount] = useState('');
 
   const totalPrice = items.reduce((acc, item) => acc + (item.pricePerUnit * item.quantity), 0);
+
+  // Stock disponible por código, restando lo que ya se está apartando en las
+  // otras líneas de este mismo formulario (para no dejar seleccionar más de
+  // lo que realmente hay, aunque se repita la misma prenda en dos líneas).
+  const availableStock = (code: string, exceptItemId: string) => {
+    const totalStock = getStockForCode(code, lots);
+    const usedElsewhere = items
+      .filter((i) => i.id !== exceptItemId && i.code === code)
+      .reduce((acc, i) => acc + i.quantity, 0);
+    return Math.max(0, totalStock - usedElsewhere);
+  };
 
   // Autocompletar teléfono cuando el nombre coincide EXACTO con un cliente ya registrado
   useEffect(() => {
@@ -57,6 +71,8 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
             updated.name = selectedInv.name;
             updated.code = selectedInv.code;
             updated.pricePerUnit = selectedInv.basePrice;
+            const stock = availableStock(selectedInv.code, item.id);
+            updated.quantity = Math.max(1, Math.min(updated.quantity || 1, Math.max(1, stock)));
           } else {
             updated.name = '';
             updated.code = '';
@@ -88,8 +104,9 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
     setPhoneNumber(cleanVal);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError('');
     const deposit = parseFloat(depositAmount) || 0;
 
     if (!customerName || items.some(i => !i.garmentId)) {
@@ -100,6 +117,15 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
     if (phoneNumber.length !== 8) {
       setPhoneError('El teléfono debe tener exactamente 8 dígitos.');
       return;
+    }
+
+    // Verificación local de stock antes de intentar guardar (la verificación
+    // definitiva ocurre igual en el servidor, por si alguien más vendió al mismo tiempo).
+    for (const item of items) {
+      if (item.quantity > getStockForCode(item.code, lots)) {
+        setSubmitError(`No hay suficiente stock de "${item.name}". Revisa la cantidad.`);
+        return;
+      }
     }
 
     const reservationId = generateId();
@@ -122,14 +148,20 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
       }]
     };
 
-    onAdd(newReservation);
-
-    setCustomerName('');
-    setPhoneNumber('');
-    setPhoneError('');
-    setPhoneAutoFilled(false);
-    setDepositAmount('');
-    setItems([{ id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0 }]);
+    setSubmitting(true);
+    try {
+      await onAdd(newReservation);
+      setCustomerName('');
+      setPhoneNumber('');
+      setPhoneError('');
+      setPhoneAutoFilled(false);
+      setDepositAmount('');
+      setItems([{ id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0 }]);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'No se pudo guardar el apartado.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const isInventoryEmpty = inventory.length === 0;
@@ -197,11 +229,15 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
                         required
                       >
                         <option value="">-- Seleccionar Prenda --</option>
-                        {inventory.map(inv => (
-                          <option key={inv.id} value={inv.id}>
-                            {inv.code} - {inv.name} ({formatCurrency(inv.basePrice)})
-                          </option>
-                        ))}
+                        {inventory.map(inv => {
+                          const stock = availableStock(inv.code, item.id);
+                          const outOfStock = stock <= 0 && inv.id !== item.garmentId;
+                          return (
+                            <option key={inv.id} value={inv.id} disabled={outOfStock}>
+                              {inv.code} - {inv.name} ({formatCurrency(inv.basePrice)}) {outOfStock ? '· Sin stock' : `· Stock: ${stock}`}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                     {items.length > 1 && (
@@ -225,13 +261,20 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
                           <p className="text-xs font-bold text-slate-700">{formatCurrency(item.pricePerUnit)}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase mb-1 text-center">Cant.</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase mb-1 text-center">
+                            Cant. <span className="text-slate-300 normal-case">(stock: {availableStock(item.code, item.id) + item.quantity})</span>
+                          </p>
                           <input
                             type="number"
                             min="1"
+                            max={availableStock(item.code, item.id) + item.quantity}
                             className="w-16 px-2 py-1 border border-slate-200 rounded-md text-xs font-bold text-center"
                             value={item.quantity}
-                            onChange={(e) => updateItem(item.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                            onChange={(e) => {
+                              const max = availableStock(item.code, item.id) + item.quantity;
+                              const val = Math.max(1, Math.min(max, parseInt(e.target.value) || 1));
+                              updateItem(item.id, { quantity: val });
+                            }}
                           />
                         </div>
                       </div>
@@ -296,12 +339,16 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
           </div>
         </div>
 
+        {submitError && (
+          <p className="text-[11px] text-rose-600 font-bold bg-rose-50 border border-rose-100 rounded-xl px-3 py-2">⚠️ {submitError}</p>
+        )}
+
         <button
           type="submit"
-          disabled={isInventoryEmpty}
+          disabled={isInventoryEmpty || submitting}
           className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black py-4 rounded-2xl transition duration-200 shadow-xl shadow-blue-200 uppercase tracking-widest text-xs"
         >
-          Guardar Registro
+          {submitting ? 'Guardando...' : 'Guardar Registro'}
         </button>
       </form>
     </div>
