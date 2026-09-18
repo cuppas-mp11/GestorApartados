@@ -124,7 +124,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700 transition flex items-center gap-2"
+              className="bg-[#1a8a72] text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-[#1a8a72] transition flex items-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -140,10 +140,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
-          <form onSubmit={handleAdd} className="space-y-4 mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
+          <form onSubmit={handleAdd} className="space-y-4 mb-6 bg-[#2bb297]/5 p-4 rounded-xl border border-[#2bb297]/10">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                <div>
-                <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Código</label>
+                <label className="block text-[10px] font-bold text-[#2bb297] uppercase mb-1">Código</label>
                 <input
                   type="text"
                   placeholder="Ej. BLUSA25"
@@ -154,7 +154,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Nombre del Grupo</label>
+                <label className="block text-[10px] font-bold text-[#2bb297] uppercase mb-1">Nombre del Grupo</label>
                 <input
                   type="text"
                   placeholder="Ej. Blusas Línea Básica"
@@ -166,7 +166,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
               </div>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Categoría (opcional)</label>
+              <label className="block text-[10px] font-bold text-[#2bb297] uppercase mb-1">Categoría (opcional)</label>
               <input
                 type="text"
                 placeholder="Ej. Blusas"
@@ -177,7 +177,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
             </div>
             <div className="flex gap-3">
               <div className="flex-1">
-                <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Precio Unitario (Q)</label>
+                <label className="block text-[10px] font-bold text-[#2bb297] uppercase mb-1">Precio Unitario (Q)</label>
                 <input
                   type="number"
                   placeholder="0.00"
@@ -187,11 +187,11 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
                   required
                 />
               </div>
-              <button className="self-end bg-blue-600 text-white rounded-lg px-6 py-2 text-sm font-bold hover:bg-blue-700 transition">
+              <button className="self-end bg-[#2bb297] text-white rounded-lg px-6 py-2 text-sm font-bold hover:bg-[#1a8a72] transition">
                 Añadir Prenda
               </button>
             </div>
-            {formError && <p className="text-[11px] text-rose-600 font-bold">{formError}</p>}
+            {formError && <p className="text-[11px] text-[#8c3a4b] font-bold">{formError}</p>}
           </form>
 
           <div className="space-y-2">
@@ -205,13 +205,13 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
                     <div>
                       <span className="font-semibold text-slate-700">{item.name}</span>
                       {item.category && <span className="ml-2 text-[9px] text-slate-400 font-bold uppercase">{item.category}</span>}
-                      <p className="text-xs text-blue-600 font-bold">
+                      <p className="text-xs text-[#2bb297] font-bold">
                         {formatCurrency(item.basePrice)}
                         <span className="text-slate-400 font-medium"> · Stock: {stockFor(item.code)}</span>
                       </p>
                     </div>
                   </div>
-                  <button onClick={() => remove(item.id)} className="text-rose-400 hover:text-rose-600 p-2 rounded-full hover:bg-rose-50 transition">
+                  <button onClick={() => remove(item.id)} className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] p-2 rounded-full hover:bg-[#8c3a4b]/10 transition">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>

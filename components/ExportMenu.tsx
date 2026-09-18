@@ -145,7 +145,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ reservations }) => {
                     <button
                       key={type}
                       onClick={() => setFilterType(type)}
-                      className={`text-left px-3 py-2 rounded-lg text-xs font-bold transition ${filterType === type ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'text-slate-600 hover:bg-slate-50'}`}
+                      className={`text-left px-3 py-2 rounded-lg text-xs font-bold transition ${filterType === type ? 'bg-[#2bb297]/5 text-[#2bb297] border border-[#2bb297]/10' : 'text-slate-600 hover:bg-slate-50'}`}
                     >
                       {type === 'PENDING' ? 'Solo Pendientes' : type === 'MONTH' ? 'Por Mes' : 'Historial Completo'}
                     </button>
@@ -167,13 +167,13 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ reservations }) => {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setFormat('EXCEL')}
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition ${format === 'EXCEL' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'text-slate-600 border-transparent hover:bg-slate-50'}`}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition ${format === 'EXCEL' ? 'bg-[#2bb297]/5 text-[#1a8a72] border-[#2bb297]/20' : 'text-slate-600 border-transparent hover:bg-slate-50'}`}
                   >
                     EXCEL (.xlsx)
                   </button>
                   <button
                     onClick={() => setFormat('PDF')}
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition ${format === 'PDF' ? 'bg-rose-50 text-rose-600 border-rose-200' : 'text-slate-600 border-transparent hover:bg-slate-50'}`}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition ${format === 'PDF' ? 'bg-[#8c3a4b]/10 text-[#8c3a4b] border-[#8c3a4b]/30' : 'text-slate-600 border-transparent hover:bg-slate-50'}`}
                   >
                     PDF (.pdf)
                   </button>
@@ -182,7 +182,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ reservations }) => {
 
               <button
                 onClick={handleExport}
-                className="w-full bg-blue-600 text-white py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition shadow-lg shadow-blue-100"
+                className="w-full bg-[#2bb297] text-white py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#1a8a72] transition shadow-lg shadow-[#2bb297]/10"
               >
                 Generar Archivo
               </button>

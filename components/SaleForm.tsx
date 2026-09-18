@@ -142,8 +142,8 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
 
           <div className="space-y-4">
             {isInventoryEmpty ? (
-              <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl text-center">
-                <p className="text-xs text-amber-700 font-bold tracking-tight">⚠️ Primero debes agregar prendas al catálogo.</p>
+              <div className="bg-[#c9a876]/10 border border-[#c9a876]/15 p-4 rounded-xl text-center">
+                <p className="text-xs text-[#8a6a3f] font-bold tracking-tight">⚠️ Primero debes agregar prendas al catálogo.</p>
               </div>
             ) : (
               items.map((item) => {
@@ -173,7 +173,7 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
                         </select>
                       </div>
                       {items.length > 1 && (
-                        <button type="button" onClick={() => removeItemRow(item.id)} className="p-2 text-rose-400 hover:text-rose-600 transition">
+                        <button type="button" onClick={() => removeItemRow(item.id)} className="p-2 text-[#8c3a4b]/60 hover:text-[#8c3a4b] transition">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
@@ -287,7 +287,7 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
         </div>
 
         {submitError && (
-          <p className="text-[11px] text-rose-600 font-bold bg-rose-50 border border-rose-100 rounded-xl px-3 py-2">⚠️ {submitError}</p>
+          <p className="text-[11px] text-[#8c3a4b] font-bold bg-[#8c3a4b]/10 border border-[#8c3a4b]/15 rounded-xl px-3 py-2">⚠️ {submitError}</p>
         )}
 
         <button

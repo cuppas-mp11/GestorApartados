@@ -74,20 +74,20 @@ export const CustomerManager: React.FC<CustomerManagerProps> = ({ customers, onU
                   {editingId === c.id ? (
                     <div className="space-y-2">
                       <input
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm bg-blue-50"
+                        className="w-full px-3 py-2 border border-[#2bb297]/30 rounded-lg text-sm bg-[#2bb297]/5"
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         placeholder="Nombre"
                       />
                       <input
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm bg-blue-50"
+                        className="w-full px-3 py-2 border border-[#2bb297]/30 rounded-lg text-sm bg-[#2bb297]/5"
                         value={editPhone}
                         onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 8))}
                         placeholder="Teléfono (8 dígitos)"
                       />
-                      {editError && <p className="text-[11px] text-rose-600 font-bold">{editError}</p>}
+                      {editError && <p className="text-[11px] text-[#8c3a4b] font-bold">{editError}</p>}
                       <div className="flex gap-2">
-                        <button onClick={() => saveEdit(c.id)} className="flex-1 bg-blue-600 text-white text-xs font-bold py-1.5 rounded-lg">Guardar</button>
+                        <button onClick={() => saveEdit(c.id)} className="flex-1 bg-[#2bb297] text-white text-xs font-bold py-1.5 rounded-lg">Guardar</button>
                         <button onClick={() => setEditingId(null)} className="flex-1 bg-slate-200 text-slate-600 text-xs font-bold py-1.5 rounded-lg">Cancelar</button>
                       </div>
                     </div>
@@ -97,16 +97,16 @@ export const CustomerManager: React.FC<CustomerManagerProps> = ({ customers, onU
                         <span className="bg-slate-100 text-slate-500 text-[10px] font-black px-2 py-0.5 rounded border border-slate-200">{c.code}</span>
                         <div>
                           <span className="font-semibold text-slate-700 text-sm">{c.name}</span>
-                          <p className="text-xs text-blue-600 font-bold">{c.phone}</p>
+                          <p className="text-xs text-[#2bb297] font-bold">{c.phone}</p>
                         </div>
                       </div>
                       <div className="flex gap-1">
-                        <button onClick={() => startEdit(c)} className="text-blue-500 hover:text-blue-700 p-2 rounded-full hover:bg-blue-50 transition text-xs font-bold">
+                        <button onClick={() => startEdit(c)} className="text-[#2bb297] hover:text-[#1a8a72] p-2 rounded-full hover:bg-[#2bb297]/5 transition text-xs font-bold">
                           Editar
                         </button>
                         <button
                           onClick={() => { if (confirm(`¿Quitar a ${c.name} de la libreta de clientes? Sus apartados anteriores no se verán afectados.`)) onDelete(c.id); }}
-                          className="text-rose-400 hover:text-rose-600 p-2 rounded-full hover:bg-rose-50 transition text-xs font-bold"
+                          className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] p-2 rounded-full hover:bg-[#8c3a4b]/10 transition text-xs font-bold"
                         >
                           Quitar
                         </button>

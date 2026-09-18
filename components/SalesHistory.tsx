@@ -9,8 +9,8 @@ interface SalesHistoryProps {
 }
 
 const paymentBadgeStyles: Record<string, string> = {
-  cash: 'bg-emerald-100 text-emerald-800',
-  transfer: 'bg-blue-100 text-blue-800',
+  cash: 'bg-[#2bb297]/10 text-[#1a8a72]',
+  transfer: 'bg-[#2bb297]/10 text-[#1a8a72]',
   card: 'bg-violet-100 text-violet-800',
   other: 'bg-slate-100 text-slate-600',
 };
@@ -100,7 +100,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, rol
                     <td className="px-4 py-4 align-top text-right">
                       {cancelled ? (
                         <div>
-                          <span className="px-2 py-1 rounded text-[10px] font-black uppercase bg-rose-100 text-rose-700">ANULADA</span>
+                          <span className="px-2 py-1 rounded text-[10px] font-black uppercase bg-[#8c3a4b]/15 text-[#6f2d3a]">ANULADA</span>
                           {sale.cancelledByEmail && (
                             <p className="text-[9px] text-slate-400 font-bold mt-1 max-w-[130px]">Por {sale.cancelledByEmail}</p>
                           )}
@@ -108,12 +108,12 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, rol
                       ) : role === 'admin' ? (
                         <button
                           onClick={() => onCancel(sale.id)}
-                          className="flex items-center justify-center gap-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 transition px-3 py-1.5 rounded-lg text-[11px] font-black ml-auto"
+                          className="flex items-center justify-center gap-1.5 text-[#8c3a4b] hover:text-white hover:bg-[#8c3a4b] border border-[#8c3a4b]/30 hover:border-[#8c3a4b] transition px-3 py-1.5 rounded-lg text-[11px] font-black ml-auto"
                         >
                           <span>↩</span> Anular
                         </button>
                       ) : (
-                        <span className="px-2 py-1 rounded text-[10px] font-black uppercase bg-emerald-100 text-emerald-800">COMPLETADA</span>
+                        <span className="px-2 py-1 rounded text-[10px] font-black uppercase bg-[#2bb297]/10 text-[#1a8a72]">COMPLETADA</span>
                       )}
                     </td>
                   </tr>

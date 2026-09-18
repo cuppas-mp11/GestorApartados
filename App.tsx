@@ -489,7 +489,7 @@ const App: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
+      <div className="min-h-screen flex items-center justify-center bg-[#e8f7f2]">
         <p className="text-slate-400 font-bold text-sm">Cargando...</p>
       </div>
     );
@@ -499,7 +499,7 @@ const App: React.FC = () => {
 
   if (dataLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
+      <div className="min-h-screen flex items-center justify-center bg-[#e8f7f2]">
         <p className="text-slate-400 font-bold text-sm">Cargando datos del negocio...</p>
       </div>
     );
@@ -514,7 +514,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] lg:flex">
+    <div className="min-h-screen bg-[#e8f7f2] lg:flex">
       <Sidebar page={page} setPage={setPage} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex-1 min-w-0">
@@ -531,9 +531,9 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-3">
             {overdueCount > 0 && (
-              <div className="hidden sm:flex bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-xl items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-rose-600"></div>
-                <p className="text-rose-700 text-xs font-black">{overdueCount} VENCIDOS</p>
+              <div className="hidden sm:flex bg-[#8c3a4b]/15 border border-[#8c3a4b]/30 px-3 py-1.5 rounded-xl items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-[#8c3a4b]"></div>
+                <p className="text-[#6f2d3a] text-xs font-black">{overdueCount} VENCIDOS</p>
               </div>
             )}
             <button
@@ -566,7 +566,7 @@ const App: React.FC = () => {
                   <p className="font-black text-slate-800">Apartados</p>
                   <p className="text-xs text-slate-400 font-bold mt-1">{activeReservationsCount} activo(s)</p>
                   {overdueCount > 0 && (
-                    <span className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{overdueCount}</span>
+                    <span className="absolute top-4 right-4 bg-[#8c3a4b] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{overdueCount}</span>
                   )}
                 </button>
 
@@ -598,7 +598,7 @@ const App: React.FC = () => {
                     <span className="absolute top-4 right-4 bg-[#8c3a4b] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{flaggedLotsCount}</span>
                   )}
                   {role !== 'admin' && pendingLotsCount > 0 && (
-                    <span className="absolute top-4 right-4 bg-amber-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{pendingLotsCount}</span>
+                    <span className="absolute top-4 right-4 bg-[#c9a876] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{pendingLotsCount}</span>
                   )}
                 </button>
 
@@ -636,8 +636,8 @@ const App: React.FC = () => {
                   <div className="flex flex-wrap p-1 bg-slate-50 rounded-xl w-full sm:w-auto gap-1">
                     <button onClick={() => setFilter('ALL')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'ALL' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>TODOS</button>
                     <button onClick={() => setFilter('PENDING')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PENDING' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>PENDIENTES</button>
-                    <button onClick={() => setFilter('OVERDUE')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'OVERDUE' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>VENCIDOS</button>
-                    <button onClick={() => setFilter('PAID')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PAID' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>LIQUIDADOS</button>
+                    <button onClick={() => setFilter('OVERDUE')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'OVERDUE' ? 'bg-[#8c3a4b] text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>VENCIDOS</button>
+                    <button onClick={() => setFilter('PAID')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'PAID' ? 'bg-[#1a8a72] text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>LIQUIDADOS</button>
                     <button onClick={() => setFilter('CANCELLED')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'CANCELLED' ? 'bg-slate-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>LIBERADOS</button>
                     <button onClick={() => setFilter('DELETED')} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'DELETED' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ELIMINADOS</button>
                   </div>

@@ -170,7 +170,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-fit">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Nuevo Apartado</h2>
-        <span className="bg-blue-600 text-white px-3 py-1 rounded-full font-black text-xs shadow-sm">#{nextCorrelative}</span>
+        <span className="bg-[#2bb297] text-white px-3 py-1 rounded-full font-black text-xs shadow-sm">#{nextCorrelative}</span>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -181,7 +181,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
               type="text"
               required
               list="customer-names"
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-slate-50 transition"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#2bb297] bg-slate-50 transition"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               placeholder="Nombre del cliente"
@@ -194,18 +194,18 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
           </div>
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">
-              Número de Teléfono (8 dígitos) {phoneAutoFilled && <span className="text-emerald-500 normal-case">· autocompletado ✓</span>}
+              Número de Teléfono (8 dígitos) {phoneAutoFilled && <span className="text-[#2bb297] normal-case">· autocompletado ✓</span>}
             </label>
             <input
               type="text"
               required
               inputMode="numeric"
-              className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 transition font-medium ${phoneError ? 'border-rose-400 focus:ring-rose-200 bg-slate-50' : phoneAutoFilled ? 'border-emerald-300 focus:ring-emerald-200 bg-emerald-50' : 'border-slate-200 focus:ring-blue-500 bg-slate-50'}`}
+              className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 transition font-medium ${phoneError ? 'border-[#8c3a4b]/60 focus:ring-[#8c3a4b]/30 bg-slate-50' : phoneAutoFilled ? 'border-[#2bb297]/30 focus:ring-[#2bb297]/20 bg-[#2bb297]/5' : 'border-slate-200 focus:ring-[#2bb297] bg-slate-50'}`}
               value={phoneNumber}
               onChange={(e) => validatePhone(e.target.value)}
               placeholder="Ej. 41235678"
             />
-            {phoneError && <p className="text-[10px] text-rose-500 font-bold mt-1 ml-1">{phoneError}</p>}
+            {phoneError && <p className="text-[10px] text-[#8c3a4b] font-bold mt-1 ml-1">{phoneError}</p>}
           </div>
         </div>
 
@@ -214,8 +214,8 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
 
           <div className="space-y-4">
             {isInventoryEmpty ? (
-              <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl text-center">
-                <p className="text-xs text-amber-700 font-bold tracking-tight">⚠️ Primero debes agregar prendas al catálogo arriba.</p>
+              <div className="bg-[#c9a876]/10 border border-[#c9a876]/15 p-4 rounded-xl text-center">
+                <p className="text-xs text-[#8a6a3f] font-bold tracking-tight">⚠️ Primero debes agregar prendas al catálogo arriba.</p>
               </div>
             ) : (
               items.map((item) => (
@@ -223,7 +223,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
                   <div className="flex gap-2">
                     <div className="flex-1">
                       <select
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-[#2bb297]"
                         value={item.garmentId}
                         onChange={(e) => updateItem(item.id, { garmentId: e.target.value })}
                         required
@@ -244,7 +244,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
                       <button
                         type="button"
                         onClick={() => removeItemRow(item.id)}
-                        className="p-2 text-rose-400 hover:text-rose-600 transition"
+                        className="p-2 text-[#8c3a4b]/60 hover:text-[#8c3a4b] transition"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -280,7 +280,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
                       </div>
                       <div className="text-right">
                         <p className="text-[10px] text-slate-400 font-bold uppercase">Subtotal</p>
-                        <p className="text-sm font-black text-blue-600">{formatCurrency(item.pricePerUnit * item.quantity)}</p>
+                        <p className="text-sm font-black text-[#2bb297]">{formatCurrency(item.pricePerUnit * item.quantity)}</p>
                       </div>
                     </div>
                   )}
@@ -293,7 +293,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
             type="button"
             onClick={addItemRow}
             disabled={isInventoryEmpty}
-            className="mt-4 w-full py-2 border-2 border-dashed border-slate-200 rounded-xl text-[10px] font-black text-slate-400 hover:border-blue-400 hover:text-blue-500 transition uppercase tracking-widest flex items-center justify-center gap-2"
+            className="mt-4 w-full py-2 border-2 border-dashed border-slate-200 rounded-xl text-[10px] font-black text-slate-400 hover:border-[#2bb297]/50 hover:text-[#2bb297] transition uppercase tracking-widest flex items-center justify-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4" />
@@ -310,7 +310,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
               required
               min="0"
               step="0.01"
-              className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 font-bold"
+              className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#2bb297] font-bold"
               value={depositAmount}
               onChange={(e) => setDepositAmount(e.target.value)}
               placeholder="0.00"
@@ -321,7 +321,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
             <input
               type="date"
               required
-              className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 text-xs font-bold"
+              className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#2bb297] text-xs font-bold"
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
@@ -334,19 +334,19 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
             <span className="text-sm font-bold">{formatCurrency(totalPrice)}</span>
           </div>
           <div className="flex justify-between items-center border-t border-slate-800 pt-2">
-            <span className="text-[10px] font-black text-rose-400 uppercase tracking-widest">Saldo Pendiente</span>
+            <span className="text-[10px] font-black text-[#8c3a4b]/60 uppercase tracking-widest">Saldo Pendiente</span>
             <span className="text-xl font-black text-white">{formatCurrency(Math.max(0, totalPrice - (parseFloat(depositAmount) || 0)))}</span>
           </div>
         </div>
 
         {submitError && (
-          <p className="text-[11px] text-rose-600 font-bold bg-rose-50 border border-rose-100 rounded-xl px-3 py-2">⚠️ {submitError}</p>
+          <p className="text-[11px] text-[#8c3a4b] font-bold bg-[#8c3a4b]/10 border border-[#8c3a4b]/15 rounded-xl px-3 py-2">⚠️ {submitError}</p>
         )}
 
         <button
           type="submit"
           disabled={isInventoryEmpty || submitting}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black py-4 rounded-2xl transition duration-200 shadow-xl shadow-blue-200 uppercase tracking-widest text-xs"
+          className="w-full bg-[#2bb297] hover:bg-[#1a8a72] disabled:bg-slate-300 text-white font-black py-4 rounded-2xl transition duration-200 shadow-xl shadow-[#2bb297]/20 uppercase tracking-widest text-xs"
         >
           {submitting ? 'Guardando...' : 'Guardar Registro'}
         </button>

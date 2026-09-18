@@ -12,8 +12,8 @@ interface LotsPanelProps {
 }
 
 const cardStyles = {
-  green: 'bg-emerald-50 border-emerald-300 text-emerald-800',
-  amber: 'bg-amber-50 border-amber-300 text-amber-800',
+  green: 'bg-[#2bb297]/5 border-[#2bb297]/30 text-[#1a8a72]',
+  amber: 'bg-[#c9a876]/10 border-[#c9a876]/40 text-[#8a6a3f]',
   red: 'bg-[#8c3a4b]/10 border-[#8c3a4b]/40 text-[#8c3a4b]',
 };
 
@@ -160,10 +160,10 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
 
           <div className="p-5 overflow-y-auto flex-1 space-y-2">
             {detailLots.map((lot) => {
-              const alert = getLotAlertLevel(lot.weeks);
+              const rotationAlert = getLotAlertLevel(lot.weeks);
               const status = lot.verificationStatus; // undefined | 'confirmed' | 'flagged'
               return (
-                <div key={lot.id} className={`p-3 border rounded-xl ${cardStyles[alert.level]}`}>
+                <div key={lot.id} className={`p-3 border rounded-xl ${cardStyles[rotationAlert.level]}`}>
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-[10px] font-black bg-white/70 px-1.5 py-0.5 rounded border border-current/20">{lot.code}</span>
@@ -185,7 +185,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                       <p className="text-[10px] font-bold mt-1.5">{formatDate(lot.entryDate)}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
-                      <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-white/70">{alert.label}</span>
+                      <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-white/70">{rotationAlert.label}</span>
                       {role === 'admin' && (
                         <button
                           onClick={() => { if (confirm('¿Eliminar este lote?')) onDeleteLot(lot.id); }}
@@ -201,7 +201,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                   <div className="mt-2 pt-2 border-t border-current/10">
                     {status === 'confirmed' && (
                       <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black text-emerald-700">✓ Confirmado por {lot.verifiedByEmail}</p>
+                        <p className="text-[10px] font-black text-[#1a8a72]">✓ Confirmado por {lot.verifiedByEmail}</p>
                         <button
                           onClick={() => { if (confirm('¿Deshacer esta confirmación? Volverá a quedar pendiente.')) onVerifyLot(lot.id, 'pending'); }}
                           className="text-[9px] font-bold underline opacity-60 hover:opacity-100"
@@ -278,7 +278,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                         <div className="flex gap-2">
                           <button
                             onClick={() => onVerifyLot(lot.id, 'confirmed')}
-                            className="flex-1 bg-emerald-600 text-white text-[10px] font-black py-1.5 rounded-lg"
+                            className="flex-1 bg-[#1a8a72] text-white text-[10px] font-black py-1.5 rounded-lg"
                           >
                             ✓ Correcto
                           </button>
@@ -381,7 +381,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                 const monthKey = g.entryDate.substring(0, 7);
                 const showDivider = (viewMode === 'TIMELINE_ASC' || viewMode === 'TIMELINE_DESC') && monthKey !== lastMonthKey;
                 lastMonthKey = monthKey;
-                const alert = getLotAlertLevel(g.weeks);
+                const rotationAlert = getLotAlertLevel(g.weeks);
                 return (
                   <React.Fragment key={g.label}>
                     {showDivider && (
@@ -391,13 +391,13 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                     )}
                     <button
                       onClick={() => setSelectedLabel(g.label)}
-                      className={`p-3 rounded-xl border-2 text-left hover:shadow-md transition relative ${cardStyles[alert.level]}`}
+                      className={`p-3 rounded-xl border-2 text-left hover:shadow-md transition relative ${cardStyles[rotationAlert.level]}`}
                     >
                       {g.hasFlagged && (
                         <span className="absolute -top-2 -right-2 bg-[#8c3a4b] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center" title="Hay un reporte pendiente">!</span>
                       )}
                       {g.pendingCount > 0 && (
-                        <span className="absolute -top-2 -left-2 bg-amber-500 text-white text-[9px] font-black min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center" title={`${g.pendingCount} prenda(s) sin confirmar por la vendedora`}>
+                        <span className="absolute -top-2 -left-2 bg-[#c9a876] text-white text-[9px] font-black min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center" title={`${g.pendingCount} prenda(s) sin confirmar por la vendedora`}>
                           {g.pendingCount}
                         </span>
                       )}
@@ -413,7 +413,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                         </div>
                       </div>
                       <p className="text-[10px] font-bold mt-2">{formatDate(g.entryDate)}</p>
-                      <p className="text-[9px] font-black uppercase mt-1">{alert.label} · {g.weeks} sem.</p>
+                      <p className="text-[9px] font-black uppercase mt-1">{rotationAlert.label} · {g.weeks} sem.</p>
                     </button>
                   </React.Fragment>
                 );

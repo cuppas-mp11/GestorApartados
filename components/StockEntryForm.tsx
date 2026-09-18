@@ -83,8 +83,8 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col">
           <div className="p-5 space-y-3 flex-1 overflow-y-auto">
             {inventory.length === 0 ? (
-              <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl text-center">
-                <p className="text-xs text-amber-700 font-bold">⚠️ Primero agrega prendas al catálogo.</p>
+              <div className="bg-[#c9a876]/10 border border-[#c9a876]/15 p-4 rounded-xl text-center">
+                <p className="text-xs text-[#8a6a3f] font-bold">⚠️ Primero agrega prendas al catálogo.</p>
               </div>
             ) : (
               rows.map((row) => (
@@ -109,7 +109,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
                     onChange={(e) => updateRow(row.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
                   />
                   {rows.length > 1 && (
-                    <button type="button" onClick={() => removeRow(row.id)} className="text-rose-400 hover:text-rose-600 p-1">✕</button>
+                    <button type="button" onClick={() => removeRow(row.id)} className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] p-1">✕</button>
                   )}
                 </div>
               ))

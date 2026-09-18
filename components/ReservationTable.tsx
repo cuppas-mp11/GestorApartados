@@ -99,7 +99,7 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
               const totalItemsCount = res.items.reduce((acc, it) => acc + it.quantity, 0);
 
               return (
-                <tr key={res.id} className={`hover:bg-slate-50 transition-colors ${overdue ? 'bg-rose-50/50' : ''}`}>
+                <tr key={res.id} className={`hover:bg-slate-50 transition-colors ${overdue ? 'bg-[#8c3a4b]/5' : ''}`}>
                   <td className="px-4 py-4 align-top">
                     <span className="text-sm font-bold text-slate-400">{res.correlative}</span>
                   </td>
@@ -107,29 +107,29 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                     {editingId === res.id ? (
                       <form onSubmit={(e) => saveEdit(e, res)} className="flex flex-col gap-1.5 w-40">
                         <input
-                          className="px-2 py-1 text-xs border border-blue-300 rounded font-bold bg-blue-50"
+                          className="px-2 py-1 text-xs border border-[#2bb297]/30 rounded font-bold bg-[#2bb297]/5"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           placeholder="Nombre"
                           autoFocus
                         />
                         <input
-                          className="px-2 py-1 text-xs border border-blue-300 rounded font-bold bg-blue-50"
+                          className="px-2 py-1 text-xs border border-[#2bb297]/30 rounded font-bold bg-[#2bb297]/5"
                           value={editPhone}
                           onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 8))}
                           placeholder="Teléfono"
                         />
-                        {editPhoneError && <p className="text-[9px] text-rose-600 font-bold">{editPhoneError}</p>}
+                        {editPhoneError && <p className="text-[9px] text-[#8c3a4b] font-bold">{editPhoneError}</p>}
                         <div className="flex gap-1">
-                          <button type="submit" className="flex-1 bg-blue-600 text-white text-[10px] font-black py-1 rounded">Guardar</button>
+                          <button type="submit" className="flex-1 bg-[#2bb297] text-white text-[10px] font-black py-1 rounded">Guardar</button>
                           <button type="button" onClick={() => setEditingId(null)} className="flex-1 bg-slate-200 text-slate-600 text-[10px] font-black py-1 rounded">Cancelar</button>
                         </div>
                       </form>
                     ) : (
                       <div className="flex flex-col">
-                        <span className="text-[9px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-md mb-1 w-fit border border-blue-200">{res.customerCode}</span>
+                        <span className="text-[9px] font-black bg-[#2bb297]/10 text-[#2bb297] px-1.5 py-0.5 rounded-md mb-1 w-fit border border-[#2bb297]/20">{res.customerCode}</span>
                         <div className="font-bold text-slate-900 leading-tight">{res.customerName}</div>
-                        <div className="text-xs text-blue-600 font-black mt-1">{res.phoneNumber}</div>
+                        <div className="text-xs text-[#2bb297] font-black mt-1">{res.phoneNumber}</div>
                         {res.lastEditedByEmail && (
                           <div className="text-[9px] text-slate-400 font-bold mt-1" title={res.lastEditedAt}>
                             ✎ Corregido por {res.lastEditedByEmail}
@@ -138,7 +138,7 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                         {res.status !== ReservationStatus.DELETED && (
                           <button
                             onClick={() => startEditing(res)}
-                            className="text-[9px] text-blue-500 hover:text-blue-700 font-black mt-1 text-left uppercase tracking-wide"
+                            className="text-[9px] text-[#2bb297] hover:text-[#1a8a72] font-black mt-1 text-left uppercase tracking-wide"
                           >
                             Corregir datos
                           </button>
@@ -163,18 +163,18 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                   </td>
                   <td className="px-4 py-4 align-top whitespace-nowrap">
                     <div className="text-[10px] text-slate-400 font-bold uppercase">Total: {formatCurrency(totalPrice)}</div>
-                    <div className="text-emerald-600 text-xs font-bold mt-0.5">Pagado: {formatCurrency(totalPaid)}</div>
-                    <div className={`text-sm font-black mt-1 ${balance > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                    <div className="text-[#1a8a72] text-xs font-bold mt-0.5">Pagado: {formatCurrency(totalPaid)}</div>
+                    <div className={`text-sm font-black mt-1 ${balance > 0 ? 'text-[#8c3a4b]' : 'text-[#1a8a72]'}`}>
                       Saldo: {formatCurrency(Math.max(0, balance))}
                     </div>
                   </td>
                   <td className="px-4 py-4 align-top whitespace-nowrap">
                     <div className="text-[10px] text-slate-400 font-bold uppercase">Límite:</div>
-                    <div className={`text-xs font-bold ${overdue ? 'text-rose-600' : 'text-slate-700'}`}>
+                    <div className={`text-xs font-bold ${overdue ? 'text-[#8c3a4b]' : 'text-slate-700'}`}>
                       {formatDate(getDeadlineDate(res.date))}
                     </div>
                     {res.status === ReservationStatus.PENDING && (
-                      <div className={`text-[10px] font-black uppercase mt-1.5 px-2 py-0.5 rounded-full inline-block ${overdue ? 'bg-rose-600 text-white' : 'bg-blue-100 text-blue-800'}`}>
+                      <div className={`text-[10px] font-black uppercase mt-1.5 px-2 py-0.5 rounded-full inline-block ${overdue ? 'bg-[#8c3a4b] text-white' : 'bg-[#2bb297]/10 text-[#1a8a72]'}`}>
                         {overdue ? 'VENCIDO' : `Faltan ${DEADLINE_DAYS - days} d`}
                       </div>
                     )}
@@ -186,13 +186,13 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                           <>
                             <button
                               onClick={() => { setAddingPaymentId(res.id); setPaymentError(''); }}
-                              className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg text-[11px] font-black transition"
+                              className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-[#c9a876]/10 hover:bg-[#c9a876]/15 text-[#8a6a3f] border border-[#c9a876]/25 px-3 py-1.5 rounded-lg text-[11px] font-black transition"
                             >
                               <span>+Q</span> Abonar
                             </button>
                             <button
                               onClick={() => onUpdateStatus(res.id, ReservationStatus.PAID)}
-                              className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg text-[11px] font-black transition"
+                              className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-[#2bb297]/5 hover:bg-[#2bb297]/10 text-[#1a8a72] border border-[#2bb297]/20 px-3 py-1.5 rounded-lg text-[11px] font-black transition"
                             >
                               <span>✓</span> Liquidar
                             </button>
@@ -205,8 +205,8 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                           </>
                         ) : (
                           <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${
-                            res.status === ReservationStatus.PAID ? 'bg-emerald-100 text-emerald-800' :
-                            res.status === ReservationStatus.DELETED ? 'bg-rose-100 text-rose-700' :
+                            res.status === ReservationStatus.PAID ? 'bg-[#2bb297]/10 text-[#1a8a72]' :
+                            res.status === ReservationStatus.DELETED ? 'bg-[#8c3a4b]/15 text-[#6f2d3a]' :
                             'bg-slate-100 text-slate-600'
                           }`}>
                             {res.status === ReservationStatus.PAID ? 'LIQUIDADO' :
@@ -222,7 +222,7 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                         {role === 'admin' && res.status !== ReservationStatus.DELETED && (
                           <button
                             onClick={() => onDelete(res.id)}
-                            className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 transition px-3 py-1.5 rounded-lg text-[11px] font-black"
+                            className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-[#8c3a4b] hover:text-white hover:bg-[#8c3a4b] border border-[#8c3a4b]/30 hover:border-[#8c3a4b] transition px-3 py-1.5 rounded-lg text-[11px] font-black"
                           >
                             <span>🗑</span> Eliminar
                           </button>
@@ -235,17 +235,17 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                             <input
                               type="number"
                               step="0.01"
-                              className="w-24 px-2 py-1 text-xs border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 bg-amber-50 font-bold"
+                              className="w-24 px-2 py-1 text-xs border border-[#c9a876]/40 rounded focus:ring-1 focus:ring-[#c9a876] bg-[#c9a876]/10 font-bold"
                               placeholder="Monto Q"
                               value={paymentAmount}
                               onChange={(e) => setPaymentAmount(e.target.value)}
                               autoFocus
                               required
                             />
-                            <button type="submit" className="bg-amber-600 text-white p-1 rounded text-xs px-2 font-bold">OK</button>
+                            <button type="submit" className="bg-[#8a6a3f] text-white p-1 rounded text-xs px-2 font-bold">OK</button>
                             <button type="button" onClick={() => { setAddingPaymentId(null); setPaymentError(''); }} className="text-slate-400 p-1 text-xs px-2">X</button>
                           </div>
-                          {paymentError && <p className="text-[10px] text-rose-600 font-bold max-w-[160px] text-right">{paymentError}</p>}
+                          {paymentError && <p className="text-[10px] text-[#8c3a4b] font-bold max-w-[160px] text-right">{paymentError}</p>}
                         </form>
                       )}
                     </div>

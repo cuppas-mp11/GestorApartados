@@ -38,12 +38,12 @@ export const CustomerBalances: React.FC<CustomerBalancesProps> = ({ reservations
         {sortedCustomers.map((customer) => (
           <div key={customer.name} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
             <div className="flex flex-col">
-              <span className="text-[8px] font-black bg-blue-100 text-blue-600 px-1 rounded w-fit mb-1">{customer.code}</span>
+              <span className="text-[8px] font-black bg-[#2bb297]/10 text-[#2bb297] px-1 rounded w-fit mb-1">{customer.code}</span>
               <p className="text-sm font-black text-slate-800 truncate max-w-[120px]">{customer.name}</p>
               <p className="text-[10px] text-slate-400 font-bold uppercase">{customer.count} apartado(s)</p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-black text-emerald-600">{formatCurrency(customer.totalBalance)}</p>
+              <p className="text-sm font-black text-[#1a8a72]">{formatCurrency(customer.totalBalance)}</p>
               <p className="text-[10px] text-slate-400 font-bold uppercase">Saldo Total</p>
             </div>
           </div>
