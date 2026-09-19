@@ -1,15 +1,16 @@
 import React, { useState, useRef } from 'react';
-import { InventoryItem, Lot } from '../types';
-import { generateId, formatCurrency } from '../utils';
+import { InventoryItem, Lot, Reservation } from '../types';
+import { generateId, formatCurrency, getStockForCode, getReservedForCode } from '../utils';
 import * as XLSX from 'xlsx';
 
 interface InventoryManagerProps {
   items: InventoryItem[];
   lots: Lot[];
+  reservations: Reservation[];
   onUpdate: (items: InventoryItem[]) => void;
 }
 
-export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots, onUpdate }) => {
+export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots, reservations, onUpdate }) => {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [category, setCategory] = useState('');
@@ -18,8 +19,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
   const [isOpen, setIsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const stockFor = (code: string) =>
-    lots.filter((l) => l.code === code).reduce((acc, l) => acc + l.quantityRemaining, 0);
+  const stockFor = (code: string) => getStockForCode(code, lots);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,7 +207,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
                       {item.category && <span className="ml-2 text-[9px] text-slate-400 font-bold uppercase">{item.category}</span>}
                       <p className="text-xs text-[#2bb297] font-bold">
                         {formatCurrency(item.basePrice)}
-                        <span className="text-slate-400 font-medium"> · Stock: {stockFor(item.code)}</span>
+                        <span className="text-slate-400 font-medium"> · Disponible: {stockFor(item.code)}</span>
+                        {getReservedForCode(item.code, reservations) > 0 && (
+                          <span className="text-[#c9a876] font-bold"> · {getReservedForCode(item.code, reservations)} apartada(s)</span>
+                        )}
                       </p>
                     </div>
                   </div>

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { InventoryItem, Lot, Customer, Sale, SaleItem, PaymentMethod } from '../types';
-import { generateId, formatCurrency, getStockForCode, PAYMENT_METHODS, getSaleItemTotal } from '../utils';
+import React, { useState, useEffect } from 'react';
+import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod } from '../types';
+import { generateId, formatCurrency, getStockForCode, PAYMENT_METHODS, getSaleItemTotal, getPaymentsTotal, amountsMatch } from '../utils';
+import { CreditCustomerPicker } from './CreditCustomerPicker';
 
 type SaleDraft = Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>;
 
@@ -16,31 +17,37 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
   const [items, setItems] = useState<SaleItem[]>([
     { id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0, discount: 0 }
   ]);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [payments, setPayments] = useState<SalePayment[]>([{ id: generateId(), method: 'cash', amount: 0 }]);
+  const [pickerForPaymentId, setPickerForPaymentId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
   const total = items.reduce((acc, it) => acc + getSaleItemTotal(it), 0);
+  const paymentsTotal = getPaymentsTotal(payments);
+  const remaining = total - paymentsTotal;
   const isInventoryEmpty = inventory.length === 0;
+  const hasBalancePayment = payments.some((p) => p.method === 'balance');
 
-  // Stock disponible por código, restando lo que ya está usado en otras líneas de esta misma venta.
+  // Cuando solo hay una línea de pago, la mantenemos sincronizada con el total
+  // (para el caso simple: elige método y ya). En cuanto agregan una segunda,
+  // dejamos de tocar los montos automáticamente.
+  useEffect(() => {
+    if (payments.length === 1 && payments[0].method !== 'balance') {
+      setPayments([{ ...payments[0], amount: total }]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total]);
+
   const availableStock = (code: string, exceptItemId: string) => {
     const totalStock = getStockForCode(code, lots);
-    const usedElsewhere = items
-      .filter((i) => i.id !== exceptItemId && i.code === code)
-      .reduce((acc, i) => acc + i.quantity, 0);
+    const usedElsewhere = items.filter((i) => i.id !== exceptItemId && i.code === code).reduce((acc, i) => acc + i.quantity, 0);
     return Math.max(0, totalStock - usedElsewhere);
   };
 
-  const addItemRow = () => {
-    setItems([...items, { id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0, discount: 0 }]);
-  };
-
-  const removeItemRow = (id: string) => {
-    if (items.length > 1) setItems(items.filter((i) => i.id !== id));
-  };
+  const addItemRow = () => setItems([...items, { id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0, discount: 0 }]);
+  const removeItemRow = (id: string) => { if (items.length > 1) setItems(items.filter((i) => i.id !== id)); };
 
   const updateItem = (id: string, updates: Partial<SaleItem>) => {
     setItems((prev) => prev.map((item) => {
@@ -65,9 +72,40 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
     }));
   };
 
+  const addPaymentRow = () => {
+    const remainingNow = Math.max(0, total - paymentsTotal);
+    setPayments([...payments, { id: generateId(), method: 'cash', amount: remainingNow }]);
+  };
+
+  const removePaymentRow = (id: string) => {
+    if (payments.length > 1) setPayments(payments.filter((p) => p.id !== id));
+    if (pickerForPaymentId === id) setPickerForPaymentId(null);
+  };
+
+  const updatePayment = (id: string, updates: Partial<SalePayment>) => {
+    setPayments((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+  };
+
+  const handleMethodChange = (paymentId: string, method: PaymentMethod) => {
+    if (method === 'balance') {
+      updatePayment(paymentId, { method, customerId: undefined, customerName: undefined });
+      setPickerForPaymentId(paymentId);
+    } else {
+      updatePayment(paymentId, { method, customerId: undefined, customerName: undefined });
+      setPickerForPaymentId(null);
+    }
+  };
+
+  const handlePickCustomerForPayment = (paymentId: string, customer: Customer) => {
+    updatePayment(paymentId, { customerId: customer.id, customerName: customer.name });
+    setPickerForPaymentId(null);
+    if (!customerName.trim()) setCustomerName(customer.name);
+  };
+
   const resetForm = () => {
     setItems([{ id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0, discount: 0 }]);
-    setPaymentMethod('cash');
+    setPayments([{ id: generateId(), method: 'cash', amount: 0 }]);
+    setPickerForPaymentId(null);
     setCustomerName('');
     setNote('');
   };
@@ -81,7 +119,6 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
       setSubmitError('Agrega al menos una prenda.');
       return;
     }
-
     for (const item of validItems) {
       if (item.quantity > getStockForCode(item.code, lots)) {
         setSubmitError(`No hay suficiente stock de "${item.name}". Revisa la cantidad.`);
@@ -92,12 +129,29 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
         return;
       }
     }
+    for (const p of payments) {
+      if (p.method === 'balance' && !p.customerId) {
+        setSubmitError('Elige de qué clienta se descuenta el pago con "Saldo".');
+        return;
+      }
+      if (p.amount <= 0) {
+        setSubmitError('Cada línea de pago debe tener un monto mayor a 0.');
+        return;
+      }
+    }
+    if (!amountsMatch(paymentsTotal, total)) {
+      setSubmitError(`Los pagos (${formatCurrency(paymentsTotal)}) no cuadran con el total (${formatCurrency(total)}).`);
+      return;
+    }
+
+    const balancePayment = payments.find((p) => p.method === 'balance');
 
     const draft: SaleDraft = {
       date: new Date().toISOString(),
       items: validItems,
-      paymentMethod,
+      payments,
       customerName: customerName.trim() || undefined,
+      customerId: balancePayment?.customerId,
       note: note.trim() || undefined,
     };
 
@@ -127,7 +181,8 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
           <input
             type="text"
             list="sale-customer-names"
-            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#2bb297] bg-slate-50 transition"
+            disabled={hasBalancePayment}
+            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#2bb297] bg-slate-50 transition disabled:opacity-60"
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
             placeholder="Ej. Cliente de mostrador"
@@ -142,7 +197,7 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
 
           <div className="space-y-4">
             {isInventoryEmpty ? (
-              <div className="bg-[#c9a876]/10 border border-[#c9a876]/15 p-4 rounded-xl text-center">
+              <div className="bg-[#c9a876]/10 border border-[#c9a876]/25 p-4 rounded-xl text-center">
                 <p className="text-xs text-[#8a6a3f] font-bold tracking-tight">⚠️ Primero debes agregar prendas al catálogo.</p>
               </div>
             ) : (
@@ -173,7 +228,7 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
                         </select>
                       </div>
                       {items.length > 1 && (
-                        <button type="button" onClick={() => removeItemRow(item.id)} className="p-2 text-[#8c3a4b]/60 hover:text-[#8c3a4b] transition">
+                        <button type="button" onClick={() => removeItemRow(item.id)} className="p-2 text-[#8c3a4b]/70 hover:text-[#8c3a4b] transition">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
@@ -249,22 +304,67 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
         </div>
 
         <div className="border-t border-slate-100 pt-5">
-          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Método de Pago</label>
-          <div className="grid grid-cols-4 gap-2">
-            {PAYMENT_METHODS.map((m) => (
-              <button
-                key={m.value}
-                type="button"
-                onClick={() => setPaymentMethod(m.value)}
-                className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide border transition ${
-                  paymentMethod === m.value
-                    ? 'bg-[#2bb297] border-[#2bb297] text-white shadow-sm'
-                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-[#2bb297]/40'
-                }`}
-              >
-                {m.label}
-              </button>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Método(s) de Pago</label>
+            <button type="button" onClick={addPaymentRow} className="text-[10px] font-black text-[#2bb297] hover:text-[#1a8a72] uppercase tracking-widest">
+              + Combinar otro método
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {payments.map((p) => (
+              <div key={p.id}>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-[#2bb297]"
+                    value={p.method}
+                    onChange={(e) => handleMethodChange(p.id, e.target.value as PaymentMethod)}
+                  >
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m.value} value={m.value} disabled={m.value === 'balance' && hasBalancePayment && p.method !== 'balance'}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-xs font-bold text-right"
+                    value={p.amount || ''}
+                    onChange={(e) => updatePayment(p.id, { amount: parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
+                  />
+                  {payments.length > 1 && (
+                    <button type="button" onClick={() => removePaymentRow(p.id)} className="text-[#8c3a4b]/70 hover:text-[#8c3a4b] px-1">×</button>
+                  )}
+                </div>
+                {p.method === 'balance' && (
+                  p.customerId ? (
+                    <p className="text-[10px] font-bold text-[#8a6a3f] mt-1 ml-1">
+                      Usando saldo de <span className="font-black">{p.customerName}</span>{' '}
+                      <button type="button" onClick={() => setPickerForPaymentId(p.id)} className="underline">cambiar</button>
+                    </p>
+                  ) : (
+                    <p className="text-[10px] font-bold text-[#8c3a4b] mt-1 ml-1">Elige de qué clienta se descuenta ↓</p>
+                  )
+                )}
+                {pickerForPaymentId === p.id && (
+                  <div className="mt-2">
+                    <CreditCustomerPicker
+                      customers={customers}
+                      selectedCustomerId={p.customerId || ''}
+                      onSelect={(c) => handlePickCustomerForPayment(p.id, c)}
+                      onClose={() => setPickerForPaymentId(null)}
+                    />
+                  </div>
+                )}
+              </div>
             ))}
+          </div>
+
+          <div className={`mt-3 text-[11px] font-black text-right ${amountsMatch(remaining, 0) ? 'text-[#1a8a72]' : 'text-[#8c3a4b]'}`}>
+            {amountsMatch(remaining, 0) ? '✓ Pagos completos' : remaining > 0 ? `Falta ${formatCurrency(remaining)}` : `Sobran ${formatCurrency(-remaining)}`}
           </div>
         </div>
 
@@ -287,7 +387,7 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
         </div>
 
         {submitError && (
-          <p className="text-[11px] text-[#8c3a4b] font-bold bg-[#8c3a4b]/10 border border-[#8c3a4b]/15 rounded-xl px-3 py-2">⚠️ {submitError}</p>
+          <p className="text-[11px] text-[#8c3a4b] font-bold bg-[#8c3a4b]/10 border border-[#8c3a4b]/20 rounded-xl px-3 py-2">⚠️ {submitError}</p>
         )}
 
         <button

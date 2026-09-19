@@ -1,4 +1,4 @@
-import { Reservation, Lot, Sale, SaleItem, PaymentMethod } from './types';
+import { Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer } from './types';
 
 // Plazo de vencimiento centralizado (antes estaba repetido en 3 archivos distintos)
 export const DEADLINE_DAYS = 15;
@@ -125,14 +125,27 @@ export const getCandidateLotsForCode = (code: string, lots: Lot[]): Lot[] =>
     .filter((l) => l.code === code)
     .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
 
+// Cuánto de un código está actualmente "flotando" en apartados pendientes
+// (ya descontado del stock físico, pero aún no vendido ni liberado).
+export const getReservedForCode = (code: string, reservations: Reservation[]): number =>
+  reservations
+    .filter((r) => r.status === 'PENDING')
+    .flatMap((r) => r.items)
+    .filter((it) => it.code === code)
+    .reduce((acc, it) => acc + it.quantity, 0);
+
 // ---- Ventas directas (Fase 2) ----
 
-export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: 'cash', label: 'Efectivo' },
-  { value: 'transfer', label: 'Transferencia' },
-  { value: 'card', label: 'Tarjeta' },
-  { value: 'other', label: 'Otro' },
+export const PAYMENT_METHODS: { value: PaymentMethod; label: string; short: string }[] = [
+  { value: 'cash', label: 'Efectivo', short: 'EF' },
+  { value: 'transfer', label: 'Depósito o transferencia', short: 'DEP' },
+  { value: 'card', label: 'Tarjeta', short: 'TC' },
+  { value: 'other', label: 'Otro', short: 'OT' },
+  { value: 'balance', label: 'Saldo a Favor', short: 'SALDO' },
 ];
+
+// Métodos "normales" para los botones rápidos (todo menos Saldo, que tiene su propio flujo).
+export const QUICK_PAYMENT_METHODS = PAYMENT_METHODS.filter((m) => m.value !== 'balance');
 
 export const paymentMethodLabel = (method: PaymentMethod): string =>
   PAYMENT_METHODS.find((p) => p.value === method)?.label || method;
@@ -146,3 +159,17 @@ export const getSaleTotal = (sale: Sale): number =>
 
 export const getSaleItemsCount = (sale: Sale): number =>
   sale.items.reduce((acc, it) => acc + it.quantity, 0);
+
+// ---- Pagos combinados y saldo a favor (Fase 2.5) ----
+
+export const getPaymentsTotal = (payments: SalePayment[]): number =>
+  payments.reduce((acc, p) => acc + (p.amount || 0), 0);
+
+// Tolerancia de 1 centavo para comparar totales (evita falsos negativos por floats)
+export const amountsMatch = (a: number, b: number): boolean => Math.abs(a - b) < 0.01;
+
+export const getCustomerCredit = (customer: Customer): number => customer.creditBalance || 0;
+
+// Clientas con saldo a favor disponible (para el buscador al pagar con "Saldo")
+export const getCustomersWithCredit = (customers: Customer[]): Customer[] =>
+  customers.filter((c) => getCustomerCredit(c) > 0).sort((a, b) => getCustomerCredit(b) - getCustomerCredit(a));

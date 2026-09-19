@@ -10,9 +10,10 @@ interface SalesHistoryProps {
 
 const paymentBadgeStyles: Record<string, string> = {
   cash: 'bg-[#2bb297]/10 text-[#1a8a72]',
-  transfer: 'bg-[#2bb297]/10 text-[#1a8a72]',
-  card: 'bg-violet-100 text-violet-800',
+  transfer: 'bg-[#2bb297]/20 text-[#1a8a72]',
+  card: 'bg-slate-200 text-slate-700',
   other: 'bg-slate-100 text-slate-600',
+  balance: 'bg-[#c9a876]/20 text-[#8a6a3f]',
 };
 
 export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, role }) => {
@@ -54,7 +55,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, rol
                 <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
                 <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
                 <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Prendas</th>
-                <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Pago</th>
+                <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Pago(s)</th>
                 <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest text-right">Total</th>
                 <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest text-right">Acciones</th>
               </tr>
@@ -70,6 +71,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, rol
                     </td>
                     <td className="px-4 py-4 align-top whitespace-nowrap">
                       <span className="text-xs font-bold text-slate-700">{formatDate(sale.date)}</span>
+                      {sale.quickEntry && <div className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">Venta del día</div>}
                     </td>
                     <td className="px-4 py-4 align-top whitespace-nowrap">
                       <span className="text-sm font-bold text-slate-800">{sale.customerName || 'Mostrador'}</span>
@@ -90,9 +92,14 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, rol
                       <p className="text-[9px] text-slate-400 font-bold mt-1">{getSaleItemsCount(sale)} prenda(s) en total</p>
                     </td>
                     <td className="px-4 py-4 align-top">
-                      <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md ${paymentBadgeStyles[sale.paymentMethod] || 'bg-slate-100 text-slate-600'}`}>
-                        {paymentMethodLabel(sale.paymentMethod)}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        {sale.payments.map((p) => (
+                          <span key={p.id} className={`text-[10px] font-black uppercase px-2 py-1 rounded-md w-fit ${paymentBadgeStyles[p.method] || 'bg-slate-100 text-slate-600'}`}>
+                            {paymentMethodLabel(p.method)} · {formatCurrency(p.amount)}
+                            {p.method === 'balance' && p.customerName && <span className="normal-case"> ({p.customerName})</span>}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="px-4 py-4 align-top text-right">
                       <span className={`text-sm font-black ${cancelled ? 'text-slate-400 line-through' : 'text-[#1a8a72]'}`}>{formatCurrency(total)}</span>

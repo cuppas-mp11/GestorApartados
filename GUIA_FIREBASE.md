@@ -132,6 +132,10 @@ service cloud.firestore {
         get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
       allow delete: if false;
     }
+    match /creditLedger/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
+    }
   }
 }
 ```
@@ -176,4 +180,27 @@ Si ya tenías las reglas del Paso 7 publicadas de antes y solo quieres agregar l
 5. Repite para los 3 usuarios. Ejemplo: si la dueña debe poder eliminar, su documento lleva `role: admin`. El de la administradora que solo corrige datos, `role: employee`.
 
 Con esto, cualquiera que corrija un nombre o teléfono mal escrito quedará registrado (verás la nota "✎ Corregido por [correo]" en la tabla), pero solo quien tenga `role: admin` podrá ver el botón de "Eliminar" y que realmente funcione.
+
+---
+
+## Paso 9: Fase 2.5 — Saldo a favor, pagos combinados y "Venta del día"
+
+Se agregó una colección nueva, `creditLedger` (la bitácora de saldos: registra cada vez que una clienta gana o usa saldo a favor). **Ya está incluida en las reglas del Paso 7 de arriba.** Si ya tenías el Paso 7 publicado de antes y solo quieres agregar lo nuevo, pega este bloque junto a los demás `match`:
+
+```
+    match /creditLedger/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
+    }
+```
+
+**Qué cambió en el sistema con esta actualización:**
+
+- **Apartados vencidos → saldo a favor.** Cuando se libera un apartado que ya venció (más de 15 días) y la clienta ya había dejado un abono, ese abono ya NO se pierde: se acredita automáticamente como saldo a favor en su perfil de la libreta de clientes, para usarlo en una compra futura. Si se libera un apartado que **no** está vencido (la vendedora simplemente decide cancelarlo antes de tiempo), no se genera saldo — eso se asume como una corrección normal, no como dinero que se quedó la tienda.
+- **Nuevo método de pago: "Saldo a Favor".** Al registrar una venta, además de Efectivo/Tarjeta/Transferencia, aparece la opción "Saldo". Para usarla, la clienta debe ya estar registrada en la libreta — se busca por nombre, se ve cuánto tiene disponible, y ese monto se descuenta de su saldo al guardar la venta.
+- **Pagos combinados.** Una venta ya no tiene un solo método de pago: se puede dividir el total entre varios (ej. Q50 en efectivo + Q25 con tarjeta), incluyendo combinarlo con saldo a favor.
+- **"Venta del día" (modo rápido).** Es ahora la forma principal de registrar ventas en la pantalla de Ventas: una fila por cada prenda vendida (prenda, cantidad, método de pago, descuento opcional), sin necesidad de capturar cliente — pensado para que la vendedora registre todo al final del día, prenda por prenda, de forma rápida. Cada fila se guarda sola en cuanto se completa. La forma anterior (con datos de clienta y varias prendas en una sola venta) se mantiene disponible como "Venta detallada", para cuando sí se necesite ligar la venta a una clienta específica (por ejemplo, para pagar con saldo).
+- El saldo de cada clienta y su bitácora de movimientos se pueden ver en la pantalla de **Clientes**.
+- Si un admin anula una venta que se había pagado con saldo, ese saldo se le devuelve a la clienta automáticamente.
+
 

@@ -33,7 +33,8 @@ export const CustomerBalances: React.FC<CustomerBalancesProps> = ({ reservations
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-fit">
-      <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-4">Saldos por Cliente</h2>
+      <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-1">Saldos Pendientes</h2>
+      <p className="text-[10px] text-slate-400 font-bold uppercase mb-4">Lo que deben por apartados activos (no confundir con "saldo a favor")</p>
       <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
         {sortedCustomers.map((customer) => (
           <div key={customer.name} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">

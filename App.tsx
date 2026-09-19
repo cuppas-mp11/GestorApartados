@@ -22,6 +22,7 @@ import {
   Sale,
   SaleStatus,
   StockAllocation,
+  CreditTransaction,
 } from './types';
 import { ReservationForm } from './components/ReservationForm';
 import { ReservationTable } from './components/ReservationTable';
@@ -33,6 +34,7 @@ import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
 import { SaleForm } from './components/SaleForm';
+import { QuickSaleForm } from './components/QuickSaleForm';
 import { SalesHistory } from './components/SalesHistory';
 import { SalesStats } from './components/SalesStats';
 import { Login } from './components/Login';
@@ -45,6 +47,7 @@ import {
   getNextCustomerCode,
   aggregateStockNeeds,
   getCandidateLotsForCode,
+  formatCurrency,
 } from './utils';
 
 const RESERVATIONS_COLLECTION = 'reservations';
@@ -52,6 +55,7 @@ const INVENTORY_COLLECTION = 'inventory';
 const CUSTOMERS_COLLECTION = 'customers';
 const LOTS_COLLECTION = 'lots';
 const SALES_COLLECTION = 'sales';
+const CREDIT_LEDGER_COLLECTION = 'creditLedger';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -64,11 +68,13 @@ const App: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [lots, setLots] = useState<Lot[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [creditLedger, setCreditLedger] = useState<CreditTransaction[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'CANCELLED' | 'DELETED'>('ALL');
 
   const [page, setPage] = useState<Page>('inicio');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [saleMode, setSaleMode] = useState<'quick' | 'detailed'>('quick');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -155,12 +161,23 @@ const App: React.FC = () => {
       (error) => console.error('Error leyendo ventas:', error)
     );
 
+    const unsubCreditLedger = onSnapshot(
+      collection(db, CREDIT_LEDGER_COLLECTION),
+      (snapshot) => {
+        const data = snapshot.docs.map((d) => d.data() as CreditTransaction);
+        data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setCreditLedger(data);
+      },
+      (error) => console.error('Error leyendo saldos:', error)
+    );
+
     return () => {
       unsubReservations();
       unsubInventory();
       unsubCustomers();
       unsubLots();
       unsubSales();
+      unsubCreditLedger();
     };
   }, [user]);
 
@@ -314,24 +331,89 @@ const App: React.FC = () => {
     });
   };
 
-  const updateStatus = async (id: string, status: ReservationStatus) => {
-    const label = status === ReservationStatus.PAID
-      ? 'marcar este apartado como LIQUIDADO'
-      : 'LIBERAR la prenda (cancelar este apartado)';
-    if (!confirm(`¿Confirmas que deseas ${label}?`)) return;
+  // Libera un apartado (lo cancela): devuelve el stock a sus lotes de origen y,
+  // si estaba VENCIDO y ya tenía algo abonado, ese abono se acredita como saldo
+  // a favor de la clienta (no se devuelve en efectivo). Todo en una sola
+  // transacción para que nunca quede "a medias" (stock devuelto sin acreditar, o viceversa).
+  const releaseReservation = async (res: Reservation) => {
+    const wasOverdue = isOverdue(res.date);
+    const totalPaid = getTotalPaid(res);
+    const shouldCredit = wasOverdue && totalPaid > 0;
+    const customerMatch = shouldCredit ? customers.find((c) => c.code === res.customerCode) : undefined;
+    const customerRef = customerMatch ? doc(db, CUSTOMERS_COLLECTION, customerMatch.id) : null;
 
+    await runTransaction(db, async (transaction) => {
+      // ---- lecturas ----
+      const lotRefs = (!res.stockRestored && res.stockAllocations?.length) ? res.stockAllocations.map((a) => doc(db, LOTS_COLLECTION, a.lotId)) : [];
+      const lotSnaps = lotRefs.length > 0 ? await Promise.all(lotRefs.map((r) => transaction.get(r))) : [];
+
+      let freshCustomer: Customer | null = null;
+      if (customerRef) {
+        const snap = await transaction.get(customerRef);
+        if (snap.exists()) freshCustomer = snap.data() as Customer;
+      }
+
+      // ---- escrituras ----
+      const reservationUpdates: Record<string, unknown> = { status: ReservationStatus.CANCELLED };
+
+      lotSnaps.forEach((snap, idx) => {
+        if (!snap.exists()) return;
+        const fresh = snap.data() as Lot;
+        transaction.update(lotRefs[idx], { quantityRemaining: fresh.quantityRemaining + res.stockAllocations![idx].quantity });
+      });
+      if (lotRefs.length > 0) reservationUpdates.stockRestored = true;
+
+      if (customerRef && freshCustomer && customerMatch) {
+        const newBalance = (freshCustomer.creditBalance || 0) + totalPaid;
+        transaction.update(customerRef, { creditBalance: newBalance });
+
+        const ledgerRef = doc(db, CREDIT_LEDGER_COLLECTION, generateId());
+        const ledgerEntry: CreditTransaction = {
+          id: ledgerRef.id,
+          customerId: customerMatch.id,
+          customerName: customerMatch.name,
+          type: 'EARNED_EXPIRED_RESERVATION',
+          amount: totalPaid,
+          date: new Date().toISOString(),
+          reservationId: res.id,
+          note: `Apartado #${res.correlative} venció y se liberó`,
+          createdByEmail: user?.email || 'desconocido',
+        };
+        transaction.set(ledgerRef, ledgerEntry);
+
+        reservationUpdates.creditIssued = true;
+        reservationUpdates.creditAmount = totalPaid;
+      }
+
+      transaction.update(doc(db, RESERVATIONS_COLLECTION, res.id), reservationUpdates);
+    });
+  };
+
+  const updateStatus = async (id: string, status: ReservationStatus) => {
     const res = reservations.find((r) => r.id === id);
 
-    // Al liberar (cancelar) un apartado, la prenda vuelve a estar disponible:
-    // se devuelve el stock que se había descontado al crearlo.
-    if (status === ReservationStatus.CANCELLED && res && !res.stockRestored && res.stockAllocations?.length) {
-      try {
-        await restoreStock(res.stockAllocations);
-        await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), { status, stockRestored: true });
-        return;
-      } catch (err) {
-        console.error('Error devolviendo stock al liberar el apartado:', err);
+    let label = status === ReservationStatus.PAID
+      ? 'marcar este apartado como LIQUIDADO'
+      : 'LIBERAR la prenda (cancelar este apartado)';
+
+    if (status === ReservationStatus.CANCELLED && res) {
+      const wasOverdue = isOverdue(res.date);
+      const totalPaid = getTotalPaid(res);
+      if (wasOverdue && totalPaid > 0) {
+        label += `.\n\nComo el apartado ya venció y la clienta había abonado ${formatCurrency(totalPaid)}, ese monto se le acreditará como SALDO A FAVOR (no se devuelve en efectivo)`;
       }
+    }
+
+    if (!confirm(`¿Confirmas que deseas ${label}?`)) return;
+
+    if (status === ReservationStatus.CANCELLED && res) {
+      try {
+        await releaseReservation(res);
+      } catch (err) {
+        console.error('Error liberando el apartado:', err);
+        alert('No se pudo liberar el apartado. Intenta de nuevo.');
+      }
+      return;
     }
 
     await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), { status });
@@ -413,24 +495,90 @@ const App: React.FC = () => {
     await setDoc(doc(db, 'editLogs', logEntry.id), logEntry);
   };
 
-  // Registra una venta directa (mostrador): descuenta stock igual que un
-  // apartado, pero de una vez (no hay saldo pendiente ni abonos).
+  // Registra una venta (del modo detallado o del modo rápido "Venta del día").
+  // Todo en una sola transacción: descuenta stock, y si alguno de los pagos es
+  // "Saldo", verifica y descuenta el saldo de esa clienta — si algo falla
+  // (no hay stock, o no hay suficiente saldo), no se guarda nada.
   const addSale = async (
     saleDraft: Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>
   ) => {
     const needs = saleDraft.items.map((it) => ({ code: it.code, quantity: it.quantity }));
-    const stockAllocations = await allocateAndDecrementStock(needs);
+    const aggregated = aggregateStockNeeds(needs);
+    const balancePayment = saleDraft.payments.find((p) => p.method === 'balance');
 
-    const newSale: Sale = {
-      ...saleDraft,
-      id: generateId(),
-      correlative: nextSaleCorrelative,
-      soldByEmail: user?.email || 'desconocido',
-      status: SaleStatus.COMPLETED,
-      stockAllocations,
-    };
+    const saleId = generateId();
+    const saleRef = doc(db, SALES_COLLECTION, saleId);
+    const customerRef = balancePayment?.customerId ? doc(db, CUSTOMERS_COLLECTION, balancePayment.customerId) : null;
 
-    await setDoc(doc(db, SALES_COLLECTION, newSale.id), newSale);
+    await runTransaction(db, async (transaction) => {
+      // ---- 1. lecturas: lotes candidatos para descontar stock ----
+      const stockUpdates: { ref: ReturnType<typeof doc>; newRemaining: number }[] = [];
+      const stockAllocations: StockAllocation[] = [];
+
+      for (const need of aggregated) {
+        const candidates = getCandidateLotsForCode(need.code, lots);
+        let remaining = need.quantity;
+        for (const lot of candidates) {
+          if (remaining <= 0) break;
+          const ref = doc(db, LOTS_COLLECTION, lot.id);
+          const snap = await transaction.get(ref);
+          if (!snap.exists()) continue;
+          const fresh = snap.data() as Lot;
+          const take = Math.min(fresh.quantityRemaining, remaining);
+          if (take > 0) {
+            stockUpdates.push({ ref, newRemaining: fresh.quantityRemaining - take });
+            stockAllocations.push({ lotId: lot.id, code: need.code, quantity: take });
+            remaining -= take;
+          }
+        }
+        if (remaining > 0) {
+          const item = inventory.find((i) => i.code === need.code);
+          throw new Error(`No hay suficiente stock de "${item?.name || need.code}".`);
+        }
+      }
+
+      // ---- 2. lectura del saldo de la clienta, si el pago incluye "Saldo" ----
+      let freshCustomer: Customer | null = null;
+      if (balancePayment && customerRef) {
+        const snap = await transaction.get(customerRef);
+        if (!snap.exists()) throw new Error('La clienta seleccionada ya no existe en la libreta.');
+        freshCustomer = snap.data() as Customer;
+        const available = freshCustomer.creditBalance || 0;
+        if (balancePayment.amount > available + 0.01) {
+          throw new Error(`Saldo insuficiente de ${freshCustomer.name}. Disponible: ${formatCurrency(available)}.`);
+        }
+      }
+
+      // ---- 3. escrituras ----
+      stockUpdates.forEach((u) => transaction.update(u.ref, { quantityRemaining: u.newRemaining }));
+
+      if (balancePayment && customerRef && freshCustomer) {
+        transaction.update(customerRef, { creditBalance: (freshCustomer.creditBalance || 0) - balancePayment.amount });
+        const ledgerRef = doc(db, CREDIT_LEDGER_COLLECTION, generateId());
+        const ledgerEntry: CreditTransaction = {
+          id: ledgerRef.id,
+          customerId: customerRef.id,
+          customerName: freshCustomer.name,
+          type: 'USED_IN_SALE',
+          amount: -balancePayment.amount,
+          date: new Date().toISOString(),
+          saleId,
+          note: `Usado en venta #${nextSaleCorrelative}`,
+          createdByEmail: user?.email || 'desconocido',
+        };
+        transaction.set(ledgerRef, ledgerEntry);
+      }
+
+      const newSale: Sale = {
+        ...saleDraft,
+        id: saleId,
+        correlative: nextSaleCorrelative,
+        soldByEmail: user?.email || 'desconocido',
+        status: SaleStatus.COMPLETED,
+        stockAllocations,
+      };
+      transaction.set(saleRef, newSale);
+    });
   };
 
   const cancelSale = async (id: string) => {
@@ -438,21 +586,91 @@ const App: React.FC = () => {
       alert('Solo un administrador puede anular una venta.');
       return;
     }
-    if (!confirm('¿Confirmas que deseas anular esta venta? El stock vendido regresará al inventario.')) return;
+    if (!confirm('¿Confirmas que deseas anular esta venta? El stock vendido regresará al inventario y, si se pagó con saldo, se le devolverá a la clienta.')) return;
 
     const sale = sales.find((s) => s.id === id);
     if (!sale || sale.status === SaleStatus.CANCELLED) return;
 
-    try {
-      await restoreStock(sale.stockAllocations);
-    } catch (err) {
-      console.error('Error devolviendo stock de la venta anulada:', err);
-    }
+    const balancePayment = sale.payments.find((p) => p.method === 'balance');
+    const customerRef = balancePayment?.customerId ? doc(db, CUSTOMERS_COLLECTION, balancePayment.customerId) : null;
 
-    await updateDoc(doc(db, SALES_COLLECTION, id), {
-      status: SaleStatus.CANCELLED,
-      cancelledAt: new Date().toISOString(),
-      cancelledByEmail: user?.email || 'desconocido',
+    try {
+      await runTransaction(db, async (transaction) => {
+        const lotRefs = sale.stockAllocations.map((a) => doc(db, LOTS_COLLECTION, a.lotId));
+        const lotSnaps = lotRefs.length > 0 ? await Promise.all(lotRefs.map((r) => transaction.get(r))) : [];
+
+        let freshCustomer: Customer | null = null;
+        if (customerRef) {
+          const snap = await transaction.get(customerRef);
+          if (snap.exists()) freshCustomer = snap.data() as Customer;
+        }
+
+        lotSnaps.forEach((snap, idx) => {
+          if (!snap.exists()) return;
+          const fresh = snap.data() as Lot;
+          transaction.update(lotRefs[idx], { quantityRemaining: fresh.quantityRemaining + sale.stockAllocations[idx].quantity });
+        });
+
+        if (customerRef && freshCustomer && balancePayment) {
+          transaction.update(customerRef, { creditBalance: (freshCustomer.creditBalance || 0) + balancePayment.amount });
+          const ledgerRef = doc(db, CREDIT_LEDGER_COLLECTION, generateId());
+          const ledgerEntry: CreditTransaction = {
+            id: ledgerRef.id,
+            customerId: customerRef.id,
+            customerName: freshCustomer.name,
+            type: 'REFUND_CANCELLED_SALE',
+            amount: balancePayment.amount,
+            date: new Date().toISOString(),
+            saleId: sale.id,
+            note: `Venta #${sale.correlative} anulada — saldo devuelto`,
+            createdByEmail: user?.email || 'desconocido',
+          };
+          transaction.set(ledgerRef, ledgerEntry);
+        }
+
+        transaction.update(doc(db, SALES_COLLECTION, id), {
+          status: SaleStatus.CANCELLED,
+          cancelledAt: new Date().toISOString(),
+          cancelledByEmail: user?.email || 'desconocido',
+        });
+      });
+    } catch (err) {
+      console.error('Error anulando la venta:', err);
+      alert('No se pudo anular la venta. Intenta de nuevo.');
+    }
+  };
+
+  // Corrección manual de saldo (solo admin) — para arreglar errores sin tener
+  // que entrar a la consola de Firebase.
+  const adjustCustomerCredit = async (customerId: string, delta: number, note: string) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede ajustar saldos manualmente.');
+      return;
+    }
+    const customer = customers.find((c) => c.id === customerId);
+    if (!customer) return;
+
+    await runTransaction(db, async (transaction) => {
+      const ref = doc(db, CUSTOMERS_COLLECTION, customerId);
+      const snap = await transaction.get(ref);
+      if (!snap.exists()) throw new Error('La clienta ya no existe.');
+      const fresh = snap.data() as Customer;
+      const newBalance = (fresh.creditBalance || 0) + delta;
+      if (newBalance < -0.01) throw new Error('El ajuste dejaría el saldo en negativo.');
+
+      transaction.update(ref, { creditBalance: newBalance });
+      const ledgerRef = doc(db, CREDIT_LEDGER_COLLECTION, generateId());
+      const ledgerEntry: CreditTransaction = {
+        id: ledgerRef.id,
+        customerId,
+        customerName: fresh.name,
+        type: 'MANUAL_ADJUSTMENT',
+        amount: delta,
+        date: new Date().toISOString(),
+        note: note || 'Ajuste manual',
+        createdByEmail: user?.email || 'desconocido',
+      };
+      transaction.set(ledgerRef, ledgerEntry);
     });
   };
 
@@ -665,21 +883,41 @@ const App: React.FC = () => {
           {page === 'ventas' && (
             <div>
               <SalesStats sales={sales} />
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 mt-6">
-                <div className="lg:col-span-1 space-y-4">
-                  <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} />
-                </div>
-                <div className="lg:col-span-3">
-                  <SalesHistory sales={sales} onCancel={cancelSale} role={role} />
-                </div>
+
+              <div className="mt-6 mb-4 flex p-1 bg-slate-50 rounded-xl w-fit gap-1 border border-slate-200">
+                <button
+                  onClick={() => setSaleMode('quick')}
+                  className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${saleMode === 'quick' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Venta del día
+                </button>
+                <button
+                  onClick={() => setSaleMode('detailed')}
+                  className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${saleMode === 'detailed' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Venta detallada (con clienta)
+                </button>
               </div>
+
+              {saleMode === 'quick' ? (
+                <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} sales={sales} role={role} onCancelSale={cancelSale} />
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                  <div className="lg:col-span-1 space-y-4">
+                    <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} />
+                  </div>
+                  <div className="lg:col-span-3">
+                    <SalesHistory sales={sales} onCancel={cancelSale} role={role} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* ---------------- PÁGINA: INVENTARIO ---------------- */}
           {page === 'inventario' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
-              <InventoryManager items={inventory} lots={lots} onUpdate={handleInventoryUpdate} />
+              <InventoryManager items={inventory} lots={lots} reservations={reservations} onUpdate={handleInventoryUpdate} />
               {role === 'admin' && (
                 <StockEntryForm inventory={inventory} onSubmit={addStockEntry} />
               )}
@@ -697,8 +935,17 @@ const App: React.FC = () => {
           {/* ---------------- PÁGINA: CLIENTES ---------------- */}
           {page === 'clientes' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
-              <CustomerManager customers={customers} onUpdate={updateCustomer} onDelete={deleteCustomer} />
-              <CustomerBalances reservations={reservations} />
+              <CustomerManager
+                customers={customers}
+                creditLedger={creditLedger}
+                role={role}
+                onUpdate={updateCustomer}
+                onDelete={deleteCustomer}
+                onAdjustCredit={adjustCustomerCredit}
+              />
+              <div className="space-y-6">
+                <CustomerBalances reservations={reservations} />
+              </div>
             </div>
           )}
         </main>

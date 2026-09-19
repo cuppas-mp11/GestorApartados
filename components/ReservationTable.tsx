@@ -204,14 +204,21 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                             </button>
                           </>
                         ) : (
-                          <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${
-                            res.status === ReservationStatus.PAID ? 'bg-[#2bb297]/10 text-[#1a8a72]' :
-                            res.status === ReservationStatus.DELETED ? 'bg-[#8c3a4b]/15 text-[#6f2d3a]' :
-                            'bg-slate-100 text-slate-600'
-                          }`}>
-                            {res.status === ReservationStatus.PAID ? 'LIQUIDADO' :
-                             res.status === ReservationStatus.DELETED ? 'ELIMINADO' : 'LIBERADO'}
-                          </span>
+                          <>
+                            <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${
+                              res.status === ReservationStatus.PAID ? 'bg-[#2bb297]/10 text-[#1a8a72]' :
+                              res.status === ReservationStatus.DELETED ? 'bg-[#8c3a4b]/15 text-[#6f2d3a]' :
+                              'bg-slate-100 text-slate-600'
+                            }`}>
+                              {res.status === ReservationStatus.PAID ? 'LIQUIDADO' :
+                               res.status === ReservationStatus.DELETED ? 'ELIMINADO' : 'LIBERADO'}
+                            </span>
+                            {res.creditIssued && (
+                              <p className="text-[9px] font-black text-[#8a6a3f] mt-1 text-right">
+                                +{formatCurrency(res.creditAmount || 0)} saldo generado
+                              </p>
+                            )}
+                          </>
                         )}
                         {res.status === ReservationStatus.DELETED && res.deletedByEmail && (
                           <p className="text-[9px] text-slate-400 font-bold text-right max-w-[140px]">

@@ -10,6 +10,10 @@ export interface Customer {
   code: string;
   name: string;
   phone: string;
+  // Saldo a favor (Fase 2.5): dinero de apartados vencidos que no se devuelve
+  // en efectivo, sino que queda disponible para usarse como método de pago
+  // en una venta futura. Si no existe el campo, se trata como 0.
+  creditBalance?: number;
 }
 
 export type UserRole = 'admin' | 'employee';
@@ -104,11 +108,17 @@ export interface Reservation {
   // Se marca true una vez que el stock ya fue devuelto (al liberar o eliminar),
   // para no devolverlo dos veces.
   stockRestored?: boolean;
+  // Fase 2.5: si este apartado VENCIÓ y al liberarlo ya tenía abono, ese monto
+  // se acreditó como saldo a favor de la clienta. Queda registrado aquí para
+  // que se vea en la tabla (y no se vuelva a acreditar si algo se reintenta).
+  creditIssued?: boolean;
+  creditAmount?: number;
 }
 
 // ---- Fase 2: Ventas directas (mostrador) ----
 
-export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'other';
+// "balance" = pago con saldo a favor de una clienta (Fase 2.5)
+export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'other' | 'balance';
 
 export enum SaleStatus {
   COMPLETED = 'COMPLETED',
@@ -126,13 +136,27 @@ export interface SaleItem {
   discount: number;
 }
 
+// Fase 2.5: una venta puede pagarse combinando varios métodos
+// (ej. Q50 en efectivo + Q25 con tarjeta). La suma de amount debe
+// igualar el total de la venta.
+export interface SalePayment {
+  id: string;
+  method: PaymentMethod;
+  amount: number;
+  // Solo si method === 'balance': de qué clienta se está descontando el saldo.
+  customerId?: string;
+  customerName?: string;
+}
+
 export interface Sale {
   id: string;
   correlative: number;
   date: string; // ISO
   items: SaleItem[];
-  paymentMethod: PaymentMethod;
+  payments: SalePayment[];
   customerName?: string;
+  // Clienta ligada a la venta (necesario cuando se paga con saldo).
+  customerId?: string;
   note?: string;
   soldByEmail: string;
   status: SaleStatus;
@@ -140,4 +164,29 @@ export interface Sale {
   cancelledAt?: string;
   cancelledByEmail?: string;
   cancelReason?: string;
+  // true si se registró desde el modo rápido "Venta del día" (por grupos)
+  quickEntry?: boolean;
+}
+
+// ---- Fase 2.5: Saldo a favor de clientas ----
+
+export type CreditTransactionType =
+  | 'EARNED_EXPIRED_RESERVATION' // se generó al liberar un apartado vencido
+  | 'USED_IN_SALE'                // se usó como método de pago en una venta
+  | 'REFUND_CANCELLED_SALE'       // se devuelve porque se anuló una venta que lo usaba
+  | 'MANUAL_ADJUSTMENT';          // admin corrige el saldo a mano
+
+// Bitácora de movimientos de saldo — inmutable, para poder auditar de dónde
+// salió o a dónde se fue cada quetzal de crédito.
+export interface CreditTransaction {
+  id: string;
+  customerId: string;
+  customerName: string;
+  type: CreditTransactionType;
+  amount: number; // positivo = se abona saldo, negativo = se descuenta/usa
+  date: string;
+  reservationId?: string;
+  saleId?: string;
+  note?: string;
+  createdByEmail: string;
 }
