@@ -175,6 +175,7 @@ Si ya tenías las reglas del Paso 7 publicadas de antes y solo quieres agregar l
    - Agrega dos campos:
      - `role` (tipo string): escribe `admin` para la dueña o quien deba poder eliminar, o `employee` para la persona que solo debe poder corregir datos, sin eliminar.
      - `email` (tipo string): el correo de esa persona (solo como referencia, para identificarlo fácil).
+     - `alias` (tipo string, **opcional**): un nombre corto para esa persona (ej. "Ana"). Si lo agregas, en todo el sistema (ventas, apartados, lotes) se mostrará ese alias en vez del correo completo — por ejemplo "Vendió: Ana" en vez de "Vendió: vestimentagt@gmail.com". Si no agregas este campo, simplemente se sigue mostrando el correo.
    - Guarda.
 
 5. Repite para los 3 usuarios. Ejemplo: si la dueña debe poder eliminar, su documento lleva `role: admin`. El de la administradora que solo corrige datos, `role: employee`.

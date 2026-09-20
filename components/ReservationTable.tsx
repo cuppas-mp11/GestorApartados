@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Reservation, ReservationStatus, UserRole } from '../types';
-import { formatDate, isOverdue, calculateDaysPassed, formatCurrency, getDeadlineDate, getTotalPrice, getTotalPaid, getBalance, DEADLINE_DAYS } from '../utils';
+import { formatDate, isOverdue, calculateDaysPassed, formatCurrency, getDeadlineDate, getTotalPrice, getTotalPaid, getBalance, DEADLINE_DAYS, getDisplayName } from '../utils';
 
 interface ReservationTableProps {
   reservations: Reservation[];
@@ -9,9 +9,10 @@ interface ReservationTableProps {
   onAddPayment: (id: string, amount: number) => void;
   onEditField: (id: string, field: 'customerName' | 'phoneNumber', newValue: string) => void;
   role: UserRole | null;
+  aliases: Record<string, string>;
 }
 
-export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations, onUpdateStatus, onDelete, onAddPayment, onEditField, role }) => {
+export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations, onUpdateStatus, onDelete, onAddPayment, onEditField, role, aliases }) => {
   const [addingPaymentId, setAddingPaymentId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentError, setPaymentError] = useState('');
@@ -132,7 +133,7 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                         <div className="text-xs text-[#2bb297] font-black mt-1">{res.phoneNumber}</div>
                         {res.lastEditedByEmail && (
                           <div className="text-[9px] text-slate-400 font-bold mt-1" title={res.lastEditedAt}>
-                            ✎ Corregido por {res.lastEditedByEmail}
+                            ✎ Corregido por {getDisplayName(res.lastEditedByEmail, aliases)}
                           </div>
                         )}
                         {res.status !== ReservationStatus.DELETED && (

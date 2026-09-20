@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { InventoryItem, Lot, UserRole } from '../types';
-import { getWeeksInStore, getLotAlertLevel, formatDate } from '../utils';
+import { getWeeksInStore, getLotAlertLevel, formatDate, getDisplayName } from '../utils';
 
 interface LotsPanelProps {
   inventory: InventoryItem[];
@@ -9,6 +9,7 @@ interface LotsPanelProps {
   onDeleteLot: (id: string) => void;
   onVerifyLot: (id: string, status: 'confirmed' | 'flagged' | 'pending', note?: string) => void;
   onCorrectQuantity: (id: string, newQuantityIn: number, newQuantityRemaining: number) => void;
+  aliases: Record<string, string>;
 }
 
 const cardStyles = {
@@ -29,7 +30,7 @@ interface LabelGroup {
   pendingCount: number;
 }
 
-export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onDeleteLot, onVerifyLot, onCorrectQuantity }) => {
+export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onDeleteLot, onVerifyLot, onCorrectQuantity, aliases }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'TIMELINE_ASC' | 'TIMELINE_DESC' | 'MONTH' | 'YEAR'>('TIMELINE_ASC');
@@ -201,7 +202,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                   <div className="mt-2 pt-2 border-t border-current/10">
                     {status === 'confirmed' && (
                       <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black text-[#1a8a72]">✓ Confirmado por {lot.verifiedByEmail}</p>
+                        <p className="text-[10px] font-black text-[#1a8a72]">✓ Confirmado por {getDisplayName(lot.verifiedByEmail, aliases)}</p>
                         <button
                           onClick={() => { if (confirm('¿Deshacer esta confirmación? Volverá a quedar pendiente.')) onVerifyLot(lot.id, 'pending'); }}
                           className="text-[9px] font-bold underline opacity-60 hover:opacity-100"
@@ -213,7 +214,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
 
                     {status === 'flagged' && (
                       <div className="bg-white/70 rounded-lg p-2">
-                        <p className="text-[10px] font-black text-[#8c3a4b]">⚠️ Reportado por {lot.verifiedByEmail}: "{lot.verificationNote}"</p>
+                        <p className="text-[10px] font-black text-[#8c3a4b]">⚠️ Reportado por {getDisplayName(lot.verifiedByEmail, aliases)}: "{lot.verificationNote}"</p>
                         {role === 'admin' && (
                           correctingId === lot.id ? (
                             <div className="flex items-center gap-1 mt-1.5">

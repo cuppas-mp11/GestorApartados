@@ -3,15 +3,16 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Sale, SaleStatus, PaymentMethod } from '../types';
-import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS, getDailySequenceMap } from '../utils';
+import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS, getDailySequenceMap, getDisplayName } from '../utils';
 
 interface SalesExportMenuProps {
   sales: Sale[];
+  aliases: Record<string, string>;
 }
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 
-export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
+export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales, aliases }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<'DAY' | 'RANGE'>('DAY');
   const [day, setDay] = useState(todayStr());
@@ -89,27 +90,31 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
 
     const afterSummaryY = (doc as any).lastAutoTable.finalY + 6;
 
-    const tableHeaders = [['#', 'Prenda', 'Cantidad', 'Método(s)', 'Descuento', 'Total', 'Vendió']];
+    const tableHeaders = [['#', 'Prenda', 'Precio', 'Cantidad', 'Método(s)', 'Descuento', 'Total', 'Vendió']];
     const tableRows = data.map((s) => {
       const cancelled = s.status === SaleStatus.CANCELLED;
       const prendaList = s.items.map((it) => `${it.code} - ${it.name}`).join('\n');
+      const precioList = s.items.map((it) => formatCurrency(it.pricePerUnit)).join('\n');
       const qtyList = s.items.map((it) => `${it.quantity}`).join('\n');
       const paymentsList = s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join('\n');
       const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
       return [
         `${dailySeq.get(s.id)}${cancelled ? ' (ANULADA)' : ''}`,
         prendaList,
+        precioList,
         qtyList,
         paymentsList,
         discount > 0 ? formatCurrency(discount) : '—',
         formatCurrency(getSaleTotal(s)),
-        s.soldByEmail,
+        getDisplayName(s.soldByEmail, aliases),
       ];
     });
 
     // Fila de totales, alineada bajo la columna a la que corresponde cada dato.
+    // "Precio" y "Vendió" quedan en blanco: son solo informativas, como el precio
+    // unitario de cada línea, no tiene sentido sumarlas.
     const footRow = [[
-      '', 'TOTAL DEL DÍA', `${itemsDia} prenda(s)`, `${completed.length} venta(s)`,
+      '', 'TOTAL DEL DÍA', '', `${itemsDia} prenda(s)`, `${completed.length} venta(s)`,
       discountDia > 0 ? formatCurrency(discountDia) : '—', formatCurrency(totalDia), '',
     ]];
 
@@ -122,7 +127,7 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
       styles: { fontSize: 7.5, cellPadding: 2 },
       headStyles: { fillColor: [43, 178, 151], textColor: 255 },
       footStyles: { fillColor: [232, 247, 242], textColor: [26, 138, 114], fontStyle: 'bold', fontSize: 8 },
-      columnStyles: { 2: { halign: 'center' }, 5: { halign: 'right' } },
+      columnStyles: { 2: { halign: 'right' }, 3: { halign: 'center' }, 6: { halign: 'right' } },
     });
 
     doc.save(`Reporte_Ventas_${day}.pdf`);
@@ -149,8 +154,8 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
     rows.push(['TOTAL', totalDia]);
     rows.push([]);
 
-    // ---- Detalle de ventas, con Prenda y Cantidad en columnas separadas ----
-    rows.push(['#', 'Prenda', 'Cantidad', 'Método(s) de pago', 'Descuento (Q)', 'Total (Q)', 'Vendió', 'Estado']);
+    // ---- Detalle de ventas, con Prenda, Precio y Cantidad en columnas separadas ----
+    rows.push(['#', 'Prenda', 'Precio (Q)', 'Cantidad', 'Método(s) de pago', 'Descuento (Q)', 'Total (Q)', 'Vendió', 'Estado']);
     data.forEach((s) => {
       const cancelled = s.status === SaleStatus.CANCELLED;
       const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
@@ -158,18 +163,20 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
         rows.push([
           idx === 0 ? (dailySeq.get(s.id) ?? '') : '',
           `${it.code} - ${it.name}`,
+          it.pricePerUnit,
           it.quantity,
           idx === 0 ? s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join(' / ') : '',
           idx === 0 ? discount : '',
           idx === 0 ? getSaleTotal(s) : '',
-          idx === 0 ? s.soldByEmail : '',
+          idx === 0 ? getDisplayName(s.soldByEmail, aliases) : '',
           idx === 0 ? (cancelled ? 'ANULADA' : 'COMPLETADA') : '',
         ]);
       });
     });
 
     // Fila de totales, cada dato bajo su columna correspondiente.
-    rows.push(['', 'TOTAL DEL DÍA', itemsDia, `${completed.length} venta(s)`, discountDia, totalDia, '', '']);
+    // "Precio (Q)" y "Vendió" quedan en blanco: son solo informativas.
+    rows.push(['', 'TOTAL DEL DÍA', '', itemsDia, `${completed.length} venta(s)`, discountDia, totalDia, '', '']);
 
     const worksheet = XLSX.utils.aoa_to_sheet(rows);
     const workbook = XLSX.utils.book_new();

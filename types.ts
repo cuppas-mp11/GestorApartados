@@ -21,6 +21,10 @@ export type UserRole = 'admin' | 'employee';
 export interface UserRoleDoc {
   role: UserRole;
   email: string;
+  // Alias corto para mostrar en vez del correo completo (ej. "Vendió: Ana" en
+  // vez de "Vendió: vestimentagt@gmail.com"). Se asigna a mano desde Firebase,
+  // igual que el rol — ver GUIA_FIREBASE.md. Si no existe, se muestra el correo.
+  alias?: string;
 }
 
 // Registro de correcciones a un apartado (quién cambió qué y cuándo)

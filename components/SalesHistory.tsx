@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Sale, SaleStatus, UserRole } from '../types';
-import { formatDate, formatCurrency, getSaleTotal, getSaleItemsCount, paymentMethodLabel } from '../utils';
+import { formatDate, formatCurrency, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getDisplayName } from '../utils';
 
 interface SalesHistoryProps {
   sales: Sale[];
   onCancel: (id: string) => void;
   onEditSale: (sale: Sale) => void;
   role: UserRole | null;
+  aliases: Record<string, string>;
 }
 
 const paymentBadgeStyles: Record<string, string> = {
@@ -17,7 +18,7 @@ const paymentBadgeStyles: Record<string, string> = {
   balance: 'bg-[#c9a876]/20 text-[#8a6a3f]',
 };
 
-export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onEditSale, role }) => {
+export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onEditSale, role, aliases }) => {
   const [filter, setFilter] = useState<'ALL' | 'TODAY' | 'CANCELLED'>('ALL');
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -73,11 +74,11 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onE
                     <td className="px-4 py-4 align-top whitespace-nowrap">
                       <span className="text-xs font-bold text-slate-700">{formatDate(sale.date)}</span>
                       {sale.quickEntry && <div className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">Venta del día</div>}
-                      {sale.editedAt && <div className="text-[8px] text-[#8a6a3f] font-bold uppercase mt-0.5" title={sale.editedAt}>✎ Editada por {sale.editedByEmail}</div>}
+                      {sale.editedAt && <div className="text-[8px] text-[#8a6a3f] font-bold uppercase mt-0.5" title={sale.editedAt}>✎ Editada por {getDisplayName(sale.editedByEmail, aliases)}</div>}
                     </td>
                     <td className="px-4 py-4 align-top whitespace-nowrap">
                       <span className="text-sm font-bold text-slate-800">{sale.customerName || 'Mostrador'}</span>
-                      <div className="text-[9px] text-slate-400 font-bold mt-0.5">Vendió: {sale.soldByEmail}</div>
+                      <div className="text-[9px] text-slate-400 font-bold mt-0.5">Vendió: {getDisplayName(sale.soldByEmail, aliases)}</div>
                     </td>
                     <td className="px-4 py-4 align-top">
                       <ul className="text-xs space-y-1.5">
@@ -111,7 +112,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onE
                         <div>
                           <span className="px-2 py-1 rounded text-[10px] font-black uppercase bg-[#8c3a4b]/15 text-[#6f2d3a]">ANULADA</span>
                           {sale.cancelledByEmail && (
-                            <p className="text-[9px] text-slate-400 font-bold mt-1 max-w-[130px]">Por {sale.cancelledByEmail}</p>
+                            <p className="text-[9px] text-slate-400 font-bold mt-1 max-w-[130px]">Por {getDisplayName(sale.cancelledByEmail, aliases)}</p>
                           )}
                         </div>
                       ) : role === 'admin' ? (

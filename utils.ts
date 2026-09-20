@@ -175,6 +175,13 @@ export const getDailySequenceMap = (daySales: Sale[]): Map<string, number> => {
 export const formatSaleItemLabel = (item: SaleItem): string =>
   `${item.code} - ${item.name} (${item.quantity})`;
 
+// Muestra el alias corto de un usuario (asignado a mano en Firebase) en vez de
+// su correo completo. Si no tiene alias asignado, se muestra el correo tal cual.
+export const getDisplayName = (email: string | undefined, aliases: Record<string, string>): string => {
+  if (!email) return 'desconocido';
+  return aliases[email] || email;
+};
+
 // ---- Pagos combinados y saldo a favor (Fase 2.5) ----
 
 export const getPaymentsTotal = (payments: SalePayment[]): number =>

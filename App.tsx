@@ -79,6 +79,7 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [saleMode, setSaleMode] = useState<'quick' | 'detailed'>('quick');
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [aliases, setAliases] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -111,6 +112,25 @@ const App: React.FC = () => {
       }
     );
     return () => unsubRole();
+  }, [user]);
+
+  // Alias de cada correo (asignados a mano en Firebase, colección "roles"), para
+  // mostrar "Vendió: Ana" en vez del correo completo en toda la app.
+  useEffect(() => {
+    if (!user) return;
+    const unsubAliases = onSnapshot(
+      collection(db, 'roles'),
+      (snapshot) => {
+        const map: Record<string, string> = {};
+        snapshot.docs.forEach((d) => {
+          const data = d.data() as { email?: string; alias?: string };
+          if (data.email && data.alias) map[data.email] = data.alias;
+        });
+        setAliases(map);
+      },
+      (error) => console.error('Error leyendo alias:', error)
+    );
+    return () => unsubAliases();
   }, [user]);
 
   useEffect(() => {
@@ -1013,6 +1033,7 @@ const App: React.FC = () => {
                   onAddPayment={addPayment}
                   onEditField={editReservationField}
                   role={role}
+                  aliases={aliases}
                 />
               </div>
             </div>
@@ -1023,7 +1044,7 @@ const App: React.FC = () => {
             <div>
               <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
                 <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest">Resumen</h2>
-                <SalesExportMenu sales={sales} />
+                <SalesExportMenu sales={sales} aliases={aliases} />
               </div>
               <SalesStats sales={sales} />
 
@@ -1050,7 +1071,7 @@ const App: React.FC = () => {
                     <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} />
                   </div>
                   <div className="lg:col-span-3">
-                    <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} />
+                    <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
                   </div>
                 </div>
               )}
@@ -1082,6 +1103,7 @@ const App: React.FC = () => {
                 onDeleteLot={deleteLot}
                 onVerifyLot={verifyLot}
                 onCorrectQuantity={correctLotQuantity}
+                aliases={aliases}
               />
             </div>
           )}
