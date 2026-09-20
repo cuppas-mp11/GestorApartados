@@ -160,6 +160,21 @@ export const getSaleTotal = (sale: Sale): number =>
 export const getSaleItemsCount = (sale: Sale): number =>
   sale.items.reduce((acc, it) => acc + it.quantity, 0);
 
+// Numera las ventas de UN mismo día del 1 en adelante, en el orden en que
+// ocurrieron (por correlativo, que ya va en orden cronológico), sin importar
+// en qué orden se estén mostrando en pantalla. Se usa en "Venta del día" y en
+// el reporte del día, donde interesa "la venta #3 de hoy", no el correlativo
+// global del sistema (ese sigue existiendo internamente, solo no se muestra ahí).
+export const getDailySequenceMap = (daySales: Sale[]): Map<string, number> => {
+  const chronological = [...daySales].sort((a, b) => a.correlative - b.correlative);
+  return new Map(chronological.map((s, idx) => [s.id, idx + 1]));
+};
+
+// "PNT100 - Pantalón de 100 (2)" — mismo formato que se ve en el sistema,
+// para que el reporte impreso se lea igual que la pantalla.
+export const formatSaleItemLabel = (item: SaleItem): string =>
+  `${item.code} - ${item.name} (${item.quantity})`;
+
 // ---- Pagos combinados y saldo a favor (Fase 2.5) ----
 
 export const getPaymentsTotal = (payments: SalePayment[]): number =>

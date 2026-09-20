@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Sale, SaleStatus, PaymentMethod } from '../types';
-import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS } from '../utils';
+import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS, getDailySequenceMap, formatSaleItemLabel } from '../utils';
 
 interface SalesExportMenuProps {
   sales: Sale[];
@@ -61,6 +61,7 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
     const completed = data.filter((s) => s.status === SaleStatus.COMPLETED);
     const totalDia = completed.reduce((acc, s) => acc + getSaleTotal(s), 0);
     const itemsDia = completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
+    const dailySeq = getDailySequenceMap(data);
 
     doc.setFontSize(18);
     doc.text('Vestimenta GT', 14, 15);
@@ -87,11 +88,11 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
     const tableHeaders = [['#', 'Prenda(s)', 'Método(s)', 'Descuento', 'Total', 'Vendió']];
     const tableRows = data.map((s) => {
       const cancelled = s.status === SaleStatus.CANCELLED;
-      const itemsList = s.items.map((it) => `${it.code} (${it.quantity})`).join('\n');
+      const itemsList = s.items.map((it) => formatSaleItemLabel(it)).join('\n');
       const paymentsList = s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join('\n');
       const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
       return [
-        `${s.correlative}${cancelled ? ' (ANULADA)' : ''}`,
+        `${dailySeq.get(s.id)}${cancelled ? ' (ANULADA)' : ''}`,
         itemsList,
         paymentsList,
         discount > 0 ? formatCurrency(discount) : '—',
@@ -118,12 +119,13 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
   };
 
   const exportDayToExcel = (data: Sale[]) => {
+    const dailySeq = getDailySequenceMap(data);
     const rows = data.map((s) => {
       const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
       return {
-        'Correlativo': s.correlative,
+        '#': dailySeq.get(s.id),
         'Hora': new Date(s.date).toLocaleTimeString('es-GT'),
-        'Prendas': s.items.map((it) => `${it.code} (${it.quantity})`).join(', '),
+        'Prendas': s.items.map((it) => formatSaleItemLabel(it)).join(', '),
         'Método(s) de pago': s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join(' / '),
         'Descuento (Q)': discount,
         'Total (Q)': getSaleTotal(s),

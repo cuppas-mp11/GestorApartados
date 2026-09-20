@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, SaleStatus, UserRole } from '../types';
-import { generateId, formatCurrency, getStockForCode, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getPaymentsTotal, amountsMatch, PAYMENT_METHODS } from '../utils';
+import { generateId, formatCurrency, getStockForCode, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getPaymentsTotal, amountsMatch, PAYMENT_METHODS, getDailySequenceMap } from '../utils';
 import { CreditCustomerPicker } from './CreditCustomerPicker';
 
 type SaleDraft = Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>;
@@ -47,6 +47,7 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
   const todaySales = sales.filter((s) => s.date.startsWith(todayStr)).sort((a, b) => b.correlative - a.correlative);
   const completedToday = todaySales.filter((s) => s.status === SaleStatus.COMPLETED);
   const totalToday = completedToday.reduce((acc, s) => acc + getSaleTotal(s), 0);
+  const dailySeq = getDailySequenceMap(todaySales);
 
   const visibleSales = methodFilter === 'ALL'
     ? todaySales
@@ -430,7 +431,7 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
                     const total = getSaleTotal(sale);
                     return (
                       <tr key={sale.id} className={cancelled ? 'opacity-50' : ''}>
-                        <td className="px-3 py-2.5 text-[10px] font-bold text-slate-400">{sale.correlative}</td>
+                        <td className="px-3 py-2.5 text-[10px] font-bold text-slate-400">{dailySeq.get(sale.id)}</td>
                         <td className="px-3 py-2.5">
                           <span className="text-[9px] font-black bg-slate-100 text-slate-400 px-1 rounded border border-slate-200 mr-1">{item.code}</span>
                           <span className="text-xs font-bold text-slate-700">{item.name}</span>
