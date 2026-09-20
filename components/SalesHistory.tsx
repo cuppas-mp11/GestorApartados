@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sale, SaleStatus, UserRole } from '../types';
-import { formatDate, formatCurrency, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getDisplayName } from '../utils';
+import { formatDate, formatCurrency, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getDisplayName, isSameLocalDay } from '../utils';
 
 interface SalesHistoryProps {
   sales: Sale[];
@@ -21,10 +21,10 @@ const paymentBadgeStyles: Record<string, string> = {
 export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onEditSale, role, aliases }) => {
   const [filter, setFilter] = useState<'ALL' | 'TODAY' | 'CANCELLED'>('ALL');
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  
 
   const filtered = sales.filter((s) => {
-    if (filter === 'TODAY') return s.date.startsWith(todayStr);
+    if (filter === 'TODAY') return isSameLocalDay(s.date);
     if (filter === 'CANCELLED') return s.status === SaleStatus.CANCELLED;
     return true;
   });

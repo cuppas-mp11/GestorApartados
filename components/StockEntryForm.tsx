@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { InventoryItem, Lot } from '../types';
-import { generateId, getLotLabelForDate, parseLocalDateInput, formatCurrency } from '../utils';
+import { generateId, getLotLabelForDate, parseLocalDateInput, formatCurrency, getLocalDateStr } from '../utils';
 
 interface StockEntryFormProps {
   inventory: InventoryItem[];
@@ -16,7 +16,7 @@ interface EntryRow {
 export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSubmit }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [note, setNote] = useState('');
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [entryDate, setEntryDate] = useState(getLocalDateStr());
   const [rows, setRows] = useState<EntryRow[]>([{ id: generateId(), code: '', quantity: 1 }]);
 
   const label = getLotLabelForDate(parseLocalDateInput(entryDate));
@@ -51,7 +51,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
     onSubmit(newLots);
     setRows([{ id: generateId(), code: '', quantity: 1 }]);
     setNote('');
-    setEntryDate(new Date().toISOString().split('T')[0]);
+    setEntryDate(getLocalDateStr());
     setIsOpen(false);
   };
 
@@ -132,7 +132,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold"
                 value={entryDate}
                 onChange={(e) => setEntryDate(e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
+                max={getLocalDateStr()}
               />
             </div>
 

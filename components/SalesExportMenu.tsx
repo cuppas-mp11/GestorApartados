@@ -3,14 +3,14 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Sale, SaleStatus, PaymentMethod } from '../types';
-import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS, getDailySequenceMap, getDisplayName } from '../utils';
+import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS, getDailySequenceMap, getDisplayName, getLocalDateStr, isSameLocalDay } from '../utils';
 
 interface SalesExportMenuProps {
   sales: Sale[];
   aliases: Record<string, string>;
 }
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+const todayStr = () => getLocalDateStr();
 
 export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales, aliases }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -21,14 +21,14 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales, aliases
   const [format, setFormat] = useState<'PDF' | 'EXCEL'>('PDF');
 
   const salesForDay = (dateStr: string) =>
-    sales.filter((s) => s.date.startsWith(dateStr)).sort((a, b) => a.correlative - b.correlative);
+    sales.filter((s) => isSameLocalDay(s.date, dateStr)).sort((a, b) => a.correlative - b.correlative);
 
   const dateListBetween = (start: string, end: string): string[] => {
     const dates: string[] = [];
     let cur = new Date(start + 'T00:00:00');
     const last = new Date(end + 'T00:00:00');
     while (cur <= last) {
-      dates.push(cur.toISOString().split('T')[0]);
+      dates.push(getLocalDateStr(cur));
       cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
     }
     return dates;

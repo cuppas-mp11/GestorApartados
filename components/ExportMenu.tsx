@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Reservation, ReservationStatus } from '../types';
-import { formatCurrency, formatDate, getTotalPrice, getTotalPaid, getBalance } from '../utils';
+import { formatCurrency, formatDate, getTotalPrice, getTotalPaid, getBalance, getLocalDateStr } from '../utils';
 
 interface ExportMenuProps {
   reservations: Reservation[];
@@ -13,14 +13,14 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ reservations }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [filterType, setFilterType] = useState<'PENDING' | 'MONTH' | 'ALL'>('PENDING');
   const [format, setFormat] = useState<'EXCEL' | 'PDF'>('EXCEL');
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState(getLocalDateStr().substring(0, 7));
 
   const getFilteredData = () => {
     switch (filterType) {
       case 'PENDING':
         return reservations.filter(r => r.status === ReservationStatus.PENDING);
       case 'MONTH':
-        return reservations.filter(r => r.date.startsWith(selectedMonth));
+        return reservations.filter(r => getLocalDateStr(r.date).startsWith(selectedMonth));
       case 'ALL':
       default:
         return reservations;
@@ -43,7 +43,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ reservations }) => {
   };
 
   const exportToExcel = (data: Reservation[]) => {
-    const fileName = `Reporte_Apartados_${filterType}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `Reporte_Apartados_${filterType}_${getLocalDateStr()}.xlsx`;
 
     const rows = data.map(res => {
       const total = getTotalPrice(res);

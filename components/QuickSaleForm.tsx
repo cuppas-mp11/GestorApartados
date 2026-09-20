@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, SaleStatus, UserRole } from '../types';
-import { generateId, formatCurrency, getStockForCode, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getPaymentsTotal, amountsMatch, PAYMENT_METHODS, getDailySequenceMap } from '../utils';
+import { generateId, formatCurrency, getStockForCode, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getPaymentsTotal, amountsMatch, PAYMENT_METHODS, getDailySequenceMap, getLocalDateStr, isSameLocalDay } from '../utils';
 import { CreditCustomerPicker } from './CreditCustomerPicker';
 
 type SaleDraft = Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>;
@@ -43,11 +43,11 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
   const [error, setError] = useState('');
   const [methodFilter, setMethodFilter] = useState<'ALL' | 'DISCOUNT' | PaymentMethod>('ALL');
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateStr();
   // Ascendente: la primera venta del día queda arriba (#1), y las nuevas se
   // van agregando hacia abajo — más fácil de seguir visualmente que ir
   // buscando la más reciente hasta arriba.
-  const todaySales = sales.filter((s) => s.date.startsWith(todayStr)).sort((a, b) => a.correlative - b.correlative);
+  const todaySales = sales.filter((s) => isSameLocalDay(s.date)).sort((a, b) => a.correlative - b.correlative);
   const completedToday = todaySales.filter((s) => s.status === SaleStatus.COMPLETED);
   const totalToday = completedToday.reduce((acc, s) => acc + getSaleTotal(s), 0);
   const dailySeq = getDailySequenceMap(todaySales);

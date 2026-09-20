@@ -1,14 +1,14 @@
 import React from 'react';
 import { Sale, SaleStatus, PaymentMethod } from '../types';
-import { formatCurrency, getSaleTotal, getSaleItemsCount, PAYMENT_METHODS, getSaleItemTotal } from '../utils';
+import { formatCurrency, getSaleTotal, getSaleItemsCount, PAYMENT_METHODS, getSaleItemTotal, isSameLocalDay } from '../utils';
 
 interface SalesStatsProps {
   sales: Sale[];
 }
 
 export const SalesStats: React.FC<SalesStatsProps> = ({ sales }) => {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todaySales = sales.filter((s) => s.status === SaleStatus.COMPLETED && s.date.startsWith(todayStr));
+  
+  const todaySales = sales.filter((s) => s.status === SaleStatus.COMPLETED && isSameLocalDay(s.date));
 
   const totalToday = todaySales.reduce((acc, s) => acc + getSaleTotal(s), 0);
   const itemsToday = todaySales.reduce((acc, s) => acc + getSaleItemsCount(s), 0);

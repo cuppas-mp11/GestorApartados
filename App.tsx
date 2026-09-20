@@ -51,6 +51,8 @@ import {
   getCandidateLotsForCode,
   formatCurrency,
   normalizeSale,
+  getLocalDateStr,
+  isSameLocalDay,
 } from './utils';
 
 const RESERVATIONS_COLLECTION = 'reservations';
@@ -123,8 +125,11 @@ const App: React.FC = () => {
       (snapshot) => {
         const map: Record<string, string> = {};
         snapshot.docs.forEach((d) => {
-          const data = d.data() as { email?: string; alias?: string };
-          if (data.email && data.alias) map[data.email] = data.alias;
+          const data = d.data() as { email?: string; alias?: string; Alias?: string };
+          // Acepta "alias" o "Alias" (por si en Firebase se escribió con mayúscula),
+          // para que no dependa de cómo se haya tecleado el nombre del campo.
+          const aliasValue = data.alias || data.Alias;
+          if (data.email && aliasValue) map[data.email] = aliasValue;
         });
         setAliases(map);
       },
@@ -861,8 +866,8 @@ const App: React.FC = () => {
   const activeReservationsCount = reservations.filter((r) => r.status === ReservationStatus.PENDING).length;
   const pendingLotsCount = lots.filter((l) => l.verificationStatus !== 'confirmed' && l.verificationStatus !== 'flagged').length;
   const flaggedLotsCount = lots.filter((l) => l.verificationStatus === 'flagged').length;
-  const todayStr = new Date().toISOString().split('T')[0];
-  const salesToday = sales.filter((s) => s.status === SaleStatus.COMPLETED && s.date.startsWith(todayStr));
+  const todayStr = getLocalDateStr();
+  const salesToday = sales.filter((s) => s.status === SaleStatus.COMPLETED && isSameLocalDay(s.date));
 
   if (authLoading) {
     return (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Reservation, ReservationStatus, InventoryItem, ReservationItem, Customer, Lot } from '../types';
-import { generateId, formatCurrency, parseLocalDateInput, getStockForCode } from '../utils';
+import { generateId, formatCurrency, parseLocalDateInput, getStockForCode, getLocalDateStr } from '../utils';
 
 interface ReservationFormProps {
   onAdd: (reservation: Reservation) => Promise<void>;
@@ -17,7 +17,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [phoneAutoFilled, setPhoneAutoFilled] = useState(false);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getLocalDateStr());
   const [items, setItems] = useState<ReservationItem[]>([
     { id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0 }
   ]);

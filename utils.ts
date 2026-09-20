@@ -211,3 +211,24 @@ export const normalizeSale = (raw: any): Sale => {
     payments: [{ id: `legacy-${raw.id}`, method: raw.paymentMethod || 'other', amount: total }],
   } as Sale;
 };
+
+// Fecha de calendario LOCAL (Guatemala) en formato YYYY-MM-DD — para agrupar o
+// filtrar "por día" (ej. "ventas de hoy"). Usar toISOString() para esto es un
+// error clásico: como toISOString() da la fecha en UTC, y Guatemala está 6
+// horas detrás, cualquier venta hecha después de las 6:00pm locales quedaba
+// registrada como si fuera el día siguiente, y se mezclaba con las del otro día.
+export const getLocalDateStr = (date: Date | string = new Date()): string => {
+  // Un string "YYYY-MM-DD" (sin hora) ya es una fecha de calendario tal cual
+  // se escribió — NO pasarlo por `new Date(...)`, porque JavaScript interpreta
+  // esos strings como medianoche en UTC, y al convertir de vuelta a hora local
+  // de Guatemala (UTC-6) se recorrería un día hacia atrás.
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const isSameLocalDay = (dateA: Date | string, dateB: Date | string = new Date()): boolean =>
+  getLocalDateStr(dateA) === getLocalDateStr(dateB);
