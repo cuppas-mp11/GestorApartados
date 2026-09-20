@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Sale, SaleStatus, PaymentMethod } from '../types';
-import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS, getDailySequenceMap, formatSaleItemLabel } from '../utils';
+import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS, getDailySequenceMap } from '../utils';
 
 interface SalesExportMenuProps {
   sales: Sale[];
@@ -62,6 +62,7 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
     const completed = data.filter((s) => s.status === SaleStatus.COMPLETED);
     const totalDia = completed.reduce((acc, s) => acc + getSaleTotal(s), 0);
     const itemsDia = completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
+    const discountDia = completed.reduce((acc, s) => acc + s.items.reduce((a, it) => a + (it.discount || 0), 0), 0);
     const dailySeq = getDailySequenceMap(data);
 
     doc.setFontSize(18);
@@ -78,23 +79,27 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
       startY: 36,
       head: [['Método de pago', 'Total']],
       body: summaryRows.length > 0 ? summaryRows : [['Sin ventas completadas', formatCurrency(0)]],
+      foot: [['TOTAL', formatCurrency(totalDia)]],
       theme: 'grid',
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [43, 178, 151], textColor: 255 },
+      footStyles: { fillColor: [232, 247, 242], textColor: [26, 138, 114], fontStyle: 'bold' },
       columnStyles: { 1: { halign: 'right' } },
     });
 
     const afterSummaryY = (doc as any).lastAutoTable.finalY + 6;
 
-    const tableHeaders = [['#', 'Prenda(s)', 'Método(s)', 'Descuento', 'Total', 'Vendió']];
+    const tableHeaders = [['#', 'Prenda', 'Cantidad', 'Método(s)', 'Descuento', 'Total', 'Vendió']];
     const tableRows = data.map((s) => {
       const cancelled = s.status === SaleStatus.CANCELLED;
-      const itemsList = s.items.map((it) => formatSaleItemLabel(it)).join('\n');
+      const prendaList = s.items.map((it) => `${it.code} - ${it.name}`).join('\n');
+      const qtyList = s.items.map((it) => `${it.quantity}`).join('\n');
       const paymentsList = s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join('\n');
       const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
       return [
         `${dailySeq.get(s.id)}${cancelled ? ' (ANULADA)' : ''}`,
-        itemsList,
+        prendaList,
+        qtyList,
         paymentsList,
         discount > 0 ? formatCurrency(discount) : '—',
         formatCurrency(getSaleTotal(s)),
@@ -102,39 +107,71 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
       ];
     });
 
+    // Fila de totales, alineada bajo la columna a la que corresponde cada dato.
+    const footRow = [[
+      '', 'TOTAL DEL DÍA', `${itemsDia} prenda(s)`, `${completed.length} venta(s)`,
+      discountDia > 0 ? formatCurrency(discountDia) : '—', formatCurrency(totalDia), '',
+    ]];
+
     autoTable(doc, {
       startY: afterSummaryY,
       head: tableHeaders,
       body: tableRows,
+      foot: footRow,
       theme: 'grid',
       styles: { fontSize: 7.5, cellPadding: 2 },
       headStyles: { fillColor: [43, 178, 151], textColor: 255 },
-      columnStyles: { 4: { halign: 'right' } },
+      footStyles: { fillColor: [232, 247, 242], textColor: [26, 138, 114], fontStyle: 'bold', fontSize: 8 },
+      columnStyles: { 2: { halign: 'center' }, 5: { halign: 'right' } },
     });
-
-    const finalY = (doc as any).lastAutoTable.finalY + 8;
-    doc.setFontSize(11);
-    doc.text(`Total del día: ${formatCurrency(totalDia)}  ·  ${itemsDia} prenda(s)  ·  ${completed.length} venta(s)`, 14, finalY);
 
     doc.save(`Reporte_Ventas_${day}.pdf`);
   };
 
   const exportDayToExcel = (data: Sale[]) => {
+    const completed = data.filter((s) => s.status === SaleStatus.COMPLETED);
+    const totalDia = completed.reduce((acc, s) => acc + getSaleTotal(s), 0);
+    const itemsDia = completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
+    const discountDia = completed.reduce((acc, s) => acc + s.items.reduce((a, it) => a + (it.discount || 0), 0), 0);
     const dailySeq = getDailySequenceMap(data);
-    const rows = data.map((s) => {
-      const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
-      return {
-        '#': dailySeq.get(s.id),
-        'Hora': new Date(s.date).toLocaleTimeString('es-GT'),
-        'Prendas': s.items.map((it) => formatSaleItemLabel(it)).join(', '),
-        'Método(s) de pago': s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join(' / '),
-        'Descuento (Q)': discount,
-        'Total (Q)': getSaleTotal(s),
-        'Vendió': s.soldByEmail,
-        'Estado': s.status === SaleStatus.CANCELLED ? 'ANULADA' : 'COMPLETADA',
-      };
+
+    const rows: (string | number)[][] = [];
+    rows.push(['Vestimenta GT']);
+    rows.push([`Reporte de Ventas — ${formatDate(day)}`]);
+    rows.push([]);
+
+    // ---- Resumen por método de pago, con su total al final ----
+    rows.push(['Método de pago', 'Total']);
+    PAYMENT_METHODS.forEach((m) => {
+      const total = methodTotal(data, m.value);
+      if (total > 0) rows.push([m.label, total]);
     });
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    rows.push(['TOTAL', totalDia]);
+    rows.push([]);
+
+    // ---- Detalle de ventas, con Prenda y Cantidad en columnas separadas ----
+    rows.push(['#', 'Prenda', 'Cantidad', 'Método(s) de pago', 'Descuento (Q)', 'Total (Q)', 'Vendió', 'Estado']);
+    data.forEach((s) => {
+      const cancelled = s.status === SaleStatus.CANCELLED;
+      const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
+      s.items.forEach((it, idx) => {
+        rows.push([
+          idx === 0 ? (dailySeq.get(s.id) ?? '') : '',
+          `${it.code} - ${it.name}`,
+          it.quantity,
+          idx === 0 ? s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join(' / ') : '',
+          idx === 0 ? discount : '',
+          idx === 0 ? getSaleTotal(s) : '',
+          idx === 0 ? s.soldByEmail : '',
+          idx === 0 ? (cancelled ? 'ANULADA' : 'COMPLETADA') : '',
+        ]);
+      });
+    });
+
+    // Fila de totales, cada dato bajo su columna correspondiente.
+    rows.push(['', 'TOTAL DEL DÍA', itemsDia, `${completed.length} venta(s)`, discountDia, totalDia, '', '']);
+
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Ventas');
     XLSX.writeFile(workbook, `Reporte_Ventas_${day}.xlsx`);
