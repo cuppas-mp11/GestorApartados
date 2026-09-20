@@ -166,6 +166,9 @@ export interface Sale {
   cancelReason?: string;
   // true si se registró desde el modo rápido "Venta del día" (por grupos)
   quickEntry?: boolean;
+  // Rastro de corrección (solo admin puede editar una venta ya guardada)
+  editedAt?: string;
+  editedByEmail?: string;
 }
 
 // ---- Fase 2.5: Saldo a favor de clientas ----

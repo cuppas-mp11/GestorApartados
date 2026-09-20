@@ -35,8 +35,10 @@ import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
 import { SaleForm } from './components/SaleForm';
 import { QuickSaleForm } from './components/QuickSaleForm';
+import { EditSaleModal } from './components/EditSaleModal';
 import { SalesHistory } from './components/SalesHistory';
 import { SalesStats } from './components/SalesStats';
+import { SalesExportMenu } from './components/SalesExportMenu';
 import { Login } from './components/Login';
 import { Sidebar, Page } from './components/Sidebar';
 import {
@@ -48,6 +50,7 @@ import {
   aggregateStockNeeds,
   getCandidateLotsForCode,
   formatCurrency,
+  normalizeSale,
 } from './utils';
 
 const RESERVATIONS_COLLECTION = 'reservations';
@@ -75,6 +78,7 @@ const App: React.FC = () => {
   const [page, setPage] = useState<Page>('inicio');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [saleMode, setSaleMode] = useState<'quick' | 'detailed'>('quick');
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -154,7 +158,7 @@ const App: React.FC = () => {
     const unsubSales = onSnapshot(
       collection(db, SALES_COLLECTION),
       (snapshot) => {
-        const data = snapshot.docs.map((d) => d.data() as Sale);
+        const data = snapshot.docs.map((d) => normalizeSale(d.data()));
         data.sort((a, b) => b.correlative - a.correlative);
         setSales(data);
       },
@@ -674,6 +678,141 @@ const App: React.FC = () => {
     });
   };
 
+  // Corrige una venta ya guardada (solo admin): en una sola transacción,
+  // devuelve el stock y el saldo que esa venta tenía asignados, y vuelve a
+  // asignar los nuevos — así nunca queda a medias, sin importar qué haya cambiado.
+  const editSale = async (
+    original: Sale,
+    updatedDraft: Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>
+  ) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede editar una venta.');
+      return;
+    }
+    if (original.status === SaleStatus.CANCELLED) {
+      alert('Esta venta ya está anulada.');
+      return;
+    }
+
+    const needs = updatedDraft.items.map((it) => ({ code: it.code, quantity: it.quantity }));
+    const aggregated = aggregateStockNeeds(needs);
+    const oldBalancePayment = original.payments.find((p) => p.method === 'balance');
+    const newBalancePayment = updatedDraft.payments.find((p) => p.method === 'balance');
+    const sameCustomer = !!(oldBalancePayment && newBalancePayment && oldBalancePayment.customerId === newBalancePayment.customerId);
+
+    const saleRef = doc(db, SALES_COLLECTION, original.id);
+    const oldCustomerRef = oldBalancePayment?.customerId ? doc(db, CUSTOMERS_COLLECTION, oldBalancePayment.customerId) : null;
+    const newCustomerRef = newBalancePayment?.customerId ? doc(db, CUSTOMERS_COLLECTION, newBalancePayment.customerId) : null;
+
+    await runTransaction(db, async (transaction) => {
+      // ---- 1. lecturas ----
+      const oldLotRefs = original.stockAllocations.map((a) => doc(db, LOTS_COLLECTION, a.lotId));
+      const oldLotSnaps = oldLotRefs.length > 0 ? await Promise.all(oldLotRefs.map((r) => transaction.get(r))) : [];
+
+      let freshOldCustomer: Customer | null = null;
+      if (oldCustomerRef) {
+        const snap = await transaction.get(oldCustomerRef);
+        if (snap.exists()) freshOldCustomer = snap.data() as Customer;
+      }
+      let freshNewCustomer: Customer | null = null;
+      if (newCustomerRef) {
+        if (sameCustomer) {
+          freshNewCustomer = freshOldCustomer;
+        } else {
+          const snap = await transaction.get(newCustomerRef);
+          if (snap.exists()) freshNewCustomer = snap.data() as Customer;
+        }
+      }
+
+      // Mapa de trabajo del stock: primero se "devuelve" lo que esta venta ya tenía,
+      // para poder reasignarlo sin ir y venir si reutiliza la misma prenda.
+      const lotWorkingRemaining = new Map<string, number>();
+      oldLotSnaps.forEach((snap, idx) => {
+        if (!snap.exists()) return;
+        const fresh = snap.data() as Lot;
+        const alloc = original.stockAllocations[idx];
+        lotWorkingRemaining.set(alloc.lotId, fresh.quantityRemaining + alloc.quantity);
+      });
+
+      const newAllocations: StockAllocation[] = [];
+      for (const need of aggregated) {
+        const candidates = getCandidateLotsForCode(need.code, lots);
+        let remaining = need.quantity;
+        for (const lot of candidates) {
+          if (remaining <= 0) break;
+          let currentRemaining = lotWorkingRemaining.get(lot.id);
+          if (currentRemaining === undefined) {
+            const ref = doc(db, LOTS_COLLECTION, lot.id);
+            const snap = await transaction.get(ref);
+            if (!snap.exists()) continue;
+            currentRemaining = (snap.data() as Lot).quantityRemaining;
+            lotWorkingRemaining.set(lot.id, currentRemaining);
+          }
+          const take = Math.min(currentRemaining, remaining);
+          if (take > 0) {
+            lotWorkingRemaining.set(lot.id, currentRemaining - take);
+            newAllocations.push({ lotId: lot.id, code: need.code, quantity: take });
+            remaining -= take;
+          }
+        }
+        if (remaining > 0) {
+          const item = inventory.find((i) => i.code === need.code);
+          throw new Error(`No hay suficiente stock de "${item?.name || need.code}" para esta edición.`);
+        }
+      }
+
+      // Saldo disponible de la clienta nueva, contando lo que se le devolvería si es la misma persona
+      if (newBalancePayment) {
+        if (!freshNewCustomer) throw new Error('La clienta seleccionada para el saldo ya no existe.');
+        const base = (freshNewCustomer.creditBalance || 0) + (sameCustomer && oldBalancePayment ? oldBalancePayment.amount : 0);
+        if (newBalancePayment.amount > base + 0.01) {
+          throw new Error(`Saldo insuficiente de ${freshNewCustomer.name}. Disponible: ${formatCurrency(base)}.`);
+        }
+      }
+
+      // ---- 2. escrituras ----
+      lotWorkingRemaining.forEach((newRemaining, lotId) => {
+        transaction.update(doc(db, LOTS_COLLECTION, lotId), { quantityRemaining: newRemaining });
+      });
+
+      if (oldBalancePayment && oldCustomerRef && freshOldCustomer && !sameCustomer) {
+        transaction.update(oldCustomerRef, { creditBalance: (freshOldCustomer.creditBalance || 0) + oldBalancePayment.amount });
+        const ledgerRef = doc(db, CREDIT_LEDGER_COLLECTION, generateId());
+        const entry: CreditTransaction = {
+          id: ledgerRef.id, customerId: oldCustomerRef.id, customerName: freshOldCustomer.name,
+          type: 'REFUND_CANCELLED_SALE', amount: oldBalancePayment.amount, date: new Date().toISOString(),
+          saleId: original.id, note: `Venta #${original.correlative} editada — saldo anterior devuelto`,
+          createdByEmail: user?.email || 'desconocido',
+        };
+        transaction.set(ledgerRef, entry);
+      }
+
+      if (newBalancePayment && newCustomerRef && freshNewCustomer) {
+        const base = (freshNewCustomer.creditBalance || 0) + (sameCustomer && oldBalancePayment ? oldBalancePayment.amount : 0);
+        transaction.update(newCustomerRef, { creditBalance: base - newBalancePayment.amount });
+        const ledgerRef = doc(db, CREDIT_LEDGER_COLLECTION, generateId());
+        const entry: CreditTransaction = {
+          id: ledgerRef.id, customerId: newCustomerRef.id, customerName: freshNewCustomer.name,
+          type: 'USED_IN_SALE', amount: -newBalancePayment.amount, date: new Date().toISOString(),
+          saleId: original.id, note: `Venta #${original.correlative} editada — saldo aplicado`,
+          createdByEmail: user?.email || 'desconocido',
+        };
+        transaction.set(ledgerRef, entry);
+      }
+
+      transaction.update(saleRef, {
+        items: updatedDraft.items,
+        payments: updatedDraft.payments,
+        customerName: updatedDraft.customerName,
+        customerId: newBalancePayment?.customerId,
+        note: updatedDraft.note,
+        stockAllocations: newAllocations,
+        editedAt: new Date().toISOString(),
+        editedByEmail: user?.email || 'desconocido',
+      });
+    });
+  };
+
   const handleInventoryUpdate = async (newItems: InventoryItem[]) => {
     const existingIds = new Set(inventory.map((i) => i.id));
     const added = newItems.filter((i) => !existingIds.has(i.id));
@@ -882,6 +1021,10 @@ const App: React.FC = () => {
           {/* ---------------- PÁGINA: VENTAS ---------------- */}
           {page === 'ventas' && (
             <div>
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest">Resumen</h2>
+                <SalesExportMenu sales={sales} />
+              </div>
               <SalesStats sales={sales} />
 
               <div className="mt-6 mb-4 flex p-1 bg-slate-50 rounded-xl w-fit gap-1 border border-slate-200">
@@ -900,18 +1043,29 @@ const App: React.FC = () => {
               </div>
 
               {saleMode === 'quick' ? (
-                <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} sales={sales} role={role} onCancelSale={cancelSale} />
+                <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} sales={sales} role={role} onCancelSale={cancelSale} onEditSale={setEditingSale} />
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                   <div className="lg:col-span-1 space-y-4">
                     <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} />
                   </div>
                   <div className="lg:col-span-3">
-                    <SalesHistory sales={sales} onCancel={cancelSale} role={role} />
+                    <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} />
                   </div>
                 </div>
               )}
             </div>
+          )}
+
+          {editingSale && (
+            <EditSaleModal
+              sale={editingSale}
+              inventory={inventory}
+              lots={lots}
+              customers={customers}
+              onSave={editSale}
+              onClose={() => setEditingSale(null)}
+            />
           )}
 
           {/* ---------------- PÁGINA: INVENTARIO ---------------- */}

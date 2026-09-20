@@ -5,6 +5,7 @@ import { formatDate, formatCurrency, getSaleTotal, getSaleItemsCount, paymentMet
 interface SalesHistoryProps {
   sales: Sale[];
   onCancel: (id: string) => void;
+  onEditSale: (sale: Sale) => void;
   role: UserRole | null;
 }
 
@@ -16,7 +17,7 @@ const paymentBadgeStyles: Record<string, string> = {
   balance: 'bg-[#c9a876]/20 text-[#8a6a3f]',
 };
 
-export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, role }) => {
+export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onEditSale, role }) => {
   const [filter, setFilter] = useState<'ALL' | 'TODAY' | 'CANCELLED'>('ALL');
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -72,6 +73,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, rol
                     <td className="px-4 py-4 align-top whitespace-nowrap">
                       <span className="text-xs font-bold text-slate-700">{formatDate(sale.date)}</span>
                       {sale.quickEntry && <div className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">Venta del día</div>}
+                      {sale.editedAt && <div className="text-[8px] text-[#8a6a3f] font-bold uppercase mt-0.5" title={sale.editedAt}>✎ Editada por {sale.editedByEmail}</div>}
                     </td>
                     <td className="px-4 py-4 align-top whitespace-nowrap">
                       <span className="text-sm font-bold text-slate-800">{sale.customerName || 'Mostrador'}</span>
@@ -113,12 +115,20 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, rol
                           )}
                         </div>
                       ) : role === 'admin' ? (
-                        <button
-                          onClick={() => onCancel(sale.id)}
-                          className="flex items-center justify-center gap-1.5 text-[#8c3a4b] hover:text-white hover:bg-[#8c3a4b] border border-[#8c3a4b]/30 hover:border-[#8c3a4b] transition px-3 py-1.5 rounded-lg text-[11px] font-black ml-auto"
-                        >
-                          <span>↩</span> Anular
-                        </button>
+                        <div className="flex gap-1.5 justify-end">
+                          <button
+                            onClick={() => onEditSale(sale)}
+                            className="flex items-center justify-center gap-1.5 text-[#2bb297] hover:text-white hover:bg-[#2bb297] border border-[#2bb297]/30 hover:border-[#2bb297] transition px-3 py-1.5 rounded-lg text-[11px] font-black"
+                          >
+                            ✎ Editar
+                          </button>
+                          <button
+                            onClick={() => onCancel(sale.id)}
+                            className="flex items-center justify-center gap-1.5 text-[#8c3a4b] hover:text-white hover:bg-[#8c3a4b] border border-[#8c3a4b]/30 hover:border-[#8c3a4b] transition px-3 py-1.5 rounded-lg text-[11px] font-black"
+                          >
+                            <span>↩</span> Anular
+                          </button>
+                        </div>
                       ) : (
                         <span className="px-2 py-1 rounded text-[10px] font-black uppercase bg-[#2bb297]/10 text-[#1a8a72]">COMPLETADA</span>
                       )}

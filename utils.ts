@@ -173,3 +173,19 @@ export const getCustomerCredit = (customer: Customer): number => customer.credit
 // Clientas con saldo a favor disponible (para el buscador al pagar con "Saldo")
 export const getCustomersWithCredit = (customers: Customer[]): Customer[] =>
   customers.filter((c) => getCustomerCredit(c) > 0).sort((a, b) => getCustomerCredit(b) - getCustomerCredit(a));
+
+// Ventas guardadas ANTES de Fase 2.5 tenían un solo campo `paymentMethod`
+// (texto) en vez de la lista `payments[]` que se usa ahora. Sin esto, esas
+// ventas viejas rompían la pantalla al leerlas (payments.map de undefined).
+// Se normalizan al vuelo, una sola vez, al leerlas de Firestore.
+export const normalizeSale = (raw: any): Sale => {
+  if (Array.isArray(raw.payments)) return raw as Sale;
+  const total = (raw.items || []).reduce(
+    (acc: number, it: any) => acc + Math.max(0, (it.pricePerUnit || 0) * (it.quantity || 0) - (it.discount || 0)),
+    0
+  );
+  return {
+    ...raw,
+    payments: [{ id: `legacy-${raw.id}`, method: raw.paymentMethod || 'other', amount: total }],
+  } as Sale;
+};
