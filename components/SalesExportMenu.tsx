@@ -19,7 +19,8 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales }) => {
   const [rangeEnd, setRangeEnd] = useState(todayStr());
   const [format, setFormat] = useState<'PDF' | 'EXCEL'>('PDF');
 
-  const salesForDay = (dateStr: string) => sales.filter((s) => s.date.startsWith(dateStr));
+  const salesForDay = (dateStr: string) =>
+    sales.filter((s) => s.date.startsWith(dateStr)).sort((a, b) => a.correlative - b.correlative);
 
   const dateListBetween = (start: string, end: string): string[] => {
     const dates: string[] = [];

@@ -44,7 +44,10 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
   const [methodFilter, setMethodFilter] = useState<'ALL' | 'DISCOUNT' | PaymentMethod>('ALL');
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const todaySales = sales.filter((s) => s.date.startsWith(todayStr)).sort((a, b) => b.correlative - a.correlative);
+  // Ascendente: la primera venta del día queda arriba (#1), y las nuevas se
+  // van agregando hacia abajo — más fácil de seguir visualmente que ir
+  // buscando la más reciente hasta arriba.
+  const todaySales = sales.filter((s) => s.date.startsWith(todayStr)).sort((a, b) => a.correlative - b.correlative);
   const completedToday = todaySales.filter((s) => s.status === SaleStatus.COMPLETED);
   const totalToday = completedToday.reduce((acc, s) => acc + getSaleTotal(s), 0);
   const dailySeq = getDailySequenceMap(todaySales);
