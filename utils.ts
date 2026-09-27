@@ -1,4 +1,4 @@
-import { Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer } from './types';
+import { Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer, BaleCostEntry, Expense } from './types';
 
 // Plazo de vencimiento centralizado (antes estaba repetido en 3 archivos distintos)
 export const DEADLINE_DAYS = 15;
@@ -232,3 +232,45 @@ export const getLocalDateStr = (date: Date | string = new Date()): string => {
 
 export const isSameLocalDay = (dateA: Date | string, dateB: Date | string = new Date()): boolean =>
   getLocalDateStr(dateA) === getLocalDateStr(dateB);
+
+// ¿Una fecha (YYYY-MM-DD) cae dentro de un rango [start, end], ambos incluidos?
+export const isDateInRange = (dateStr: string, start: string, end: string): boolean => {
+  const d = getLocalDateStr(dateStr);
+  return d >= start && d <= end;
+};
+
+// ---- Fase 3: Costos por paca, gastos y rentabilidad (solo admin) ----
+
+// Historial de cálculos de costo por paca, del más reciente al más antiguo.
+export const sortBaleCostsDesc = (entries: BaleCostEntry[]): BaleCostEntry[] =>
+  [...entries].sort((a, b) => {
+    const byDate = b.date.localeCompare(a.date);
+    if (byDate !== 0) return byDate;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+// Costo unitario "vigente": el del cálculo de paca más reciente. Es el que se
+// usa para estimar el costo de la mercadería vendida en el resumen de
+// rentabilidad — si no hay ningún cálculo registrado, es 0 (no se puede estimar).
+export const getCurrentUnitCost = (entries: BaleCostEntry[]): number => {
+  const sorted = sortBaleCostsDesc(entries);
+  return sorted.length > 0 ? sorted[0].unitCost : 0;
+};
+
+// Ventas COMPLETADAS (no anuladas) cuya fecha cae dentro de un rango [start, end].
+export const getSalesInRange = (sales: Sale[], start: string, end: string): Sale[] =>
+  sales.filter((s) => (s.status as unknown as string) === 'COMPLETED' && isDateInRange(s.date, start, end));
+
+export const getExpensesInRange = (expenses: Expense[], start: string, end: string): Expense[] =>
+  expenses.filter((e) => isDateInRange(e.date, start, end));
+
+export const getExpensesTotal = (expenses: Expense[]): number =>
+  expenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+
+// Cuánto se pagó con tarjeta dentro de un conjunto de ventas (para calcular la
+// comisión real del banco sobre lo efectivamente cobrado por ese medio).
+export const getCardTotalForSales = (sales: Sale[]): number =>
+  sales.reduce((acc, s) => acc + s.payments.filter((p) => p.method === 'card').reduce((a, p) => a + p.amount, 0), 0);
+
+export const getCardCommission = (cardTotal: number, commissionPercent: number): number =>
+  cardTotal * (commissionPercent / 100);

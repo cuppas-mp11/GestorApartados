@@ -23,6 +23,11 @@ import {
   SaleStatus,
   StockAllocation,
   CreditTransaction,
+  BaleCostEntry,
+  Expense,
+  ExpenseCategory,
+  ExpenseFrequency,
+  FinanceSettings,
 } from './types';
 import { ReservationForm } from './components/ReservationForm';
 import { ReservationTable } from './components/ReservationTable';
@@ -33,6 +38,10 @@ import { LotsPanel } from './components/LotsPanel';
 import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
+import { BaleCostsPanel } from './components/BaleCostsPanel';
+import { ExpensesPanel } from './components/ExpensesPanel';
+import { FinanceSettingsCard } from './components/FinanceSettingsCard';
+import { ProfitabilitySummary } from './components/ProfitabilitySummary';
 import { SaleForm } from './components/SaleForm';
 import { QuickSaleForm } from './components/QuickSaleForm';
 import { EditSaleModal } from './components/EditSaleModal';
@@ -61,6 +70,11 @@ const CUSTOMERS_COLLECTION = 'customers';
 const LOTS_COLLECTION = 'lots';
 const SALES_COLLECTION = 'sales';
 const CREDIT_LEDGER_COLLECTION = 'creditLedger';
+const BALE_COSTS_COLLECTION = 'baleCosts';
+const EXPENSES_COLLECTION = 'expenses';
+const SETTINGS_COLLECTION = 'settings';
+const FINANCE_SETTINGS_DOC_ID = 'finance';
+const DEFAULT_FINANCE_SETTINGS: FinanceSettings = { cardCommissionPercent: 0 };
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -74,6 +88,9 @@ const App: React.FC = () => {
   const [lots, setLots] = useState<Lot[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [creditLedger, setCreditLedger] = useState<CreditTransaction[]>([]);
+  const [baleCosts, setBaleCosts] = useState<BaleCostEntry[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [financeSettings, setFinanceSettings] = useState<FinanceSettings>(DEFAULT_FINANCE_SETTINGS);
   const [dataLoading, setDataLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'CANCELLED' | 'DELETED'>('ALL');
 
@@ -209,6 +226,43 @@ const App: React.FC = () => {
       unsubCreditLedger();
     };
   }, [user]);
+
+  // Fase 3 — Costos, gastos y rentabilidad: colecciones visibles SOLO para admin.
+  // Las reglas de Firestore ya lo exigen (ver GUIA_FIREBASE.md, Paso 10); aquí
+  // además evitamos intentar suscribirse si el usuario no es admin, para no
+  // generar errores de "permiso denegado" en la consola de una empleada.
+  useEffect(() => {
+    if (!user || role !== 'admin') {
+      setBaleCosts([]);
+      setExpenses([]);
+      setFinanceSettings(DEFAULT_FINANCE_SETTINGS);
+      return;
+    }
+
+    const unsubBaleCosts = onSnapshot(
+      collection(db, BALE_COSTS_COLLECTION),
+      (snapshot) => setBaleCosts(snapshot.docs.map((d) => d.data() as BaleCostEntry)),
+      (error) => console.error('Error leyendo cálculos de costo de paca:', error)
+    );
+
+    const unsubExpenses = onSnapshot(
+      collection(db, EXPENSES_COLLECTION),
+      (snapshot) => setExpenses(snapshot.docs.map((d) => d.data() as Expense)),
+      (error) => console.error('Error leyendo gastos:', error)
+    );
+
+    const unsubSettings = onSnapshot(
+      doc(db, SETTINGS_COLLECTION, FINANCE_SETTINGS_DOC_ID),
+      (snap) => setFinanceSettings(snap.exists() ? (snap.data() as FinanceSettings) : DEFAULT_FINANCE_SETTINGS),
+      (error) => console.error('Error leyendo configuración financiera:', error)
+    );
+
+    return () => {
+      unsubBaleCosts();
+      unsubExpenses();
+      unsubSettings();
+    };
+  }, [user, role]);
 
   // ---- Motor de stock (Fase 2) ----
   // Descuenta stock de los lotes más antiguos primero (FIFO), dentro de una
@@ -851,6 +905,79 @@ const App: React.FC = () => {
     }
   };
 
+  // ---- Fase 3: Costos, gastos y rentabilidad (solo admin) ----
+
+  const addBaleCost = async (balePrice: number, quantity: number, date: string, note: string) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede registrar cálculos de costo.');
+      return;
+    }
+    const entry: BaleCostEntry = {
+      id: generateId(),
+      date,
+      balePrice,
+      quantity,
+      unitCost: balePrice / quantity,
+      note: note || undefined,
+      createdByEmail: user?.email || 'desconocido',
+      createdAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, BALE_COSTS_COLLECTION, entry.id), entry);
+  };
+
+  const deleteBaleCost = async (id: string) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede eliminar cálculos de costo.');
+      return;
+    }
+    await deleteDoc(doc(db, BALE_COSTS_COLLECTION, id));
+  };
+
+  const addExpense = async (
+    category: ExpenseCategory,
+    frequency: ExpenseFrequency,
+    amount: number,
+    date: string,
+    note: string
+  ) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede registrar gastos.');
+      return;
+    }
+    const expense: Expense = {
+      id: generateId(),
+      date,
+      category,
+      frequency,
+      amount,
+      note: note || undefined,
+      createdByEmail: user?.email || 'desconocido',
+      createdAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, EXPENSES_COLLECTION, expense.id), expense);
+  };
+
+  const deleteExpense = async (id: string) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede eliminar gastos.');
+      return;
+    }
+    await deleteDoc(doc(db, EXPENSES_COLLECTION, id));
+  };
+
+  const saveFinanceSettings = async (cardCommissionPercent: number) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede cambiar esta configuración.');
+      return;
+    }
+    const updated: FinanceSettings = {
+      cardCommissionPercent,
+      updatedByEmail: user?.email || 'desconocido',
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, SETTINGS_COLLECTION, FINANCE_SETTINGS_DOC_ID), updated);
+  };
+
   const filteredReservations = reservations.filter((res) => {
     if (filter === 'OVERDUE') return res.status === ReservationStatus.PENDING && isOverdue(res.date);
     if (filter === 'PENDING') return res.status === ReservationStatus.PENDING;
@@ -893,6 +1020,7 @@ const App: React.FC = () => {
     ventas: 'Ventas',
     inventario: 'Inventario',
     clientes: 'Clientes',
+    finanzas: 'Finanzas',
   };
 
   return (
@@ -1128,6 +1256,26 @@ const App: React.FC = () => {
                 <CustomerBalances reservations={reservations} />
               </div>
             </div>
+          )}
+
+          {/* ---------------- PÁGINA: FINANZAS (solo admin) ---------------- */}
+          {page === 'finanzas' && (
+            role !== 'admin' ? (
+              <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center">
+                <p className="text-sm font-bold text-slate-400">Esta sección es solo para administradores.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-6">
+                  <ProfitabilitySummary sales={sales} expenses={expenses} baleCosts={baleCosts} settings={financeSettings} />
+                  <ExpensesPanel expenses={expenses} aliases={aliases} onAdd={addExpense} onDelete={deleteExpense} />
+                </div>
+                <div className="space-y-6">
+                  <FinanceSettingsCard settings={financeSettings} aliases={aliases} onSave={saveFinanceSettings} />
+                  <BaleCostsPanel entries={baleCosts} aliases={aliases} onAdd={addBaleCost} onDelete={deleteBaleCost} />
+                </div>
+              </div>
+            )
           )}
         </main>
       </div>

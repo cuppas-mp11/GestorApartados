@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserRole } from '../types';
 
-export type Page = 'inicio' | 'apartados' | 'ventas' | 'inventario' | 'clientes';
+export type Page = 'inicio' | 'apartados' | 'ventas' | 'inventario' | 'clientes' | 'finanzas';
 
 interface NavItem {
   id: Page;
@@ -65,6 +65,18 @@ const navItems: NavItem[] = [
   },
 ];
 
+// Solo visible para admin — costos, gastos y rentabilidad son información
+// sensible que no debe verse desde la cuenta de una empleada.
+const adminNavItem: NavItem = {
+  id: 'finanzas',
+  label: 'Finanzas',
+  icon: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m0-12a9 9 0 100 18 9 9 0 000-18z" />
+    </svg>
+  ),
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({ page, setPage, role, isOpen, onClose }) => {
   const [logoFailed, setLogoFailed] = useState(false);
 
@@ -106,7 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ page, setPage, role, isOpen, o
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
-          {navItems.map((item) => (
+          {(role === 'admin' ? [...navItems, adminNavItem] : navItems).map((item) => (
             <button
               key={item.id}
               onClick={() => handleNavigate(item.id)}

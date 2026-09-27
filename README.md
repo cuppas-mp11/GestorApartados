@@ -1,4 +1,4 @@
-# Gestor de Apartados - Boutique & Moda GT
+# Data Vestimenta - Vestimenta GT
 
 Este es tu proyecto completo, ya con Firebase conectado (base de datos en la nube + login).
 

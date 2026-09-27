@@ -197,3 +197,57 @@ export interface CreditTransaction {
   note?: string;
   createdByEmail: string;
 }
+
+// ---- Fase 3: Costos, gastos y rentabilidad (visible SOLO para admin) ----
+
+// Cálculo de costo por "paca" (paquete de ropa comprado por precio y cantidad).
+// Se compra por precio de paca, se cuenta cuántas prendas trajo, y de ahí sale
+// el costo unitario aproximado. Cada cálculo queda en el historial (con fecha)
+// para poder ver cómo ha variado el costo con el tiempo. El más reciente es el
+// que se usa como "costo vigente" para estimar la rentabilidad.
+export interface BaleCostEntry {
+  id: string;
+  date: string; // fecha en la que se hizo/aplica el cálculo (YYYY-MM-DD, hora Guatemala)
+  balePrice: number; // "Precio de paca"
+  quantity: number; // cantidad de prendas que trajo esa paca
+  unitCost: number; // balePrice / quantity, ya calculado y guardado
+  note?: string; // ej. "Paca de blusas, proveedor Juana"
+  createdByEmail: string;
+  createdAt: string; // ISO, momento real en que se registró (para desempatar si dos comparten fecha)
+}
+
+export type ExpenseCategory = 'renta' | 'planilla' | 'servicios' | 'empaque' | 'otro';
+// "fixed" = gasto fijo (se repite normalmente cada mes, ej. renta) — solo para
+// categorizar/filtrar en los reportes; no se genera solo, se registra cada vez.
+// "variable" = gasto que no es recurrente (ej. una compra puntual).
+export type ExpenseFrequency = 'fixed' | 'variable';
+
+export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = {
+  renta: 'Renta',
+  planilla: 'Planilla / sueldos',
+  servicios: 'Servicios (luz, agua, internet)',
+  empaque: 'Empaque / bolsas',
+  otro: 'Otro',
+};
+
+// Gasto fijo o variable del negocio (renta, planilla, servicios, etc.), para
+// poder calcular la ganancia real y no solo lo que entra por ventas.
+export interface Expense {
+  id: string;
+  date: string; // YYYY-MM-DD — a qué día/mes corresponde el gasto
+  category: ExpenseCategory;
+  frequency: ExpenseFrequency;
+  amount: number;
+  note?: string; // obligatorio cuando category === 'otro', opcional en las demás
+  createdByEmail: string;
+  createdAt: string;
+}
+
+// Configuración financiera general del negocio — hoy solo guarda el porcentaje
+// de comisión que cobra el banco/datáfono por pagos con tarjeta (editable en
+// cualquier momento si el banco cambia la tasa). Un solo documento en Firestore.
+export interface FinanceSettings {
+  cardCommissionPercent: number; // ej. 5 significa 5%
+  updatedByEmail?: string;
+  updatedAt?: string;
+}

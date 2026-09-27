@@ -204,4 +204,98 @@ Se agregó una colección nueva, `creditLedger` (la bitácora de saldos: registr
 - El saldo de cada clienta y su bitácora de movimientos se pueden ver en la pantalla de **Clientes**.
 - Si un admin anula una venta que se había pagado con saldo, ese saldo se le devuelve a la clienta automáticamente.
 
+---
+
+## Paso 10: Fase 3 — Costos, gastos y rentabilidad (⚠️ requiere actualizar las reglas)
+
+Se agregaron **tres colecciones nuevas**: `baleCosts` (cálculos de costo por paca), `expenses` (gastos fijos/variables) y `settings` (guarda la comisión de tarjeta, en un documento con ID `finance`). A diferencia de todo lo anterior, **estas tres colecciones son visibles SOLO para quien tenga `role: admin`** — ni siquiera se puede leer desde la cuenta de una empleada, ni desde la pantalla ni intentando forzarlo por fuera del sistema. Por eso es indispensable actualizar las reglas; si no lo haces, la nueva pantalla de "Finanzas" no va a poder leer ni guardar nada para el admin.
+
+Ve a **Firestore Database → pestaña "Reglas"** y agrega estos tres bloques nuevos junto a los demás `match` (o reemplaza todo el archivo por el bloque completo más abajo):
+
+```
+    match /baleCosts/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenses/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /settings/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+```
+
+Si prefieres reemplazar TODO el archivo de reglas de una vez (recomendado, para evitar dejar algo desactualizado), usa este bloque completo, que junta todo lo de los Pasos 7-10:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /roles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /reservations/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null && (
+        request.resource.data.status != 'DELETED' ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow delete: if false;
+    }
+    match /inventory/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /customers/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /lots/{id} {
+      allow read, create: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow update: if request.auth != null;
+    }
+    match /editLogs/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
+    }
+    match /sales/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if false;
+    }
+    match /creditLedger/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
+    }
+    match /baleCosts/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenses/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /settings/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
+```
+
+Clic en **"Publicar"**.
+
+**Qué se agregó al sistema con esta actualización:**
+
+- **Pantalla nueva "Finanzas"** en el menú lateral, que **solo aparece si iniciaste sesión como admin** (la dueña). Una empleada nunca la ve, ni en el menú ni en la URL directa.
+- **Cálculo de costo por paca.** Como compran la mercadería por "paca" (paquete) y no por prenda individual, se agregó un formulario donde se ingresa el **"Precio de paca"** y la **cantidad de prendas** que trajo esa paca; el sistema calcula solo el costo unitario (precio ÷ cantidad) y lo guarda con la fecha. Cada cálculo queda en un **historial** para ver cómo ha variado el costo con el tiempo. El cálculo **más reciente** es el que el sistema usa como "costo vigente" para estimar cuánto cuesta la mercadería que se ha vendido — mientras más seguido lo actualices, más exacto será el número de ganancia real.
+- **Gastos fijos y variables.** Un formulario para registrar gastos (Renta, Planilla, Servicios, Empaque, u Otro con nota obligatoria), marcando si son fijos (recurrentes, ej. renta mensual) o variables (puntuales). Estos **no se repiten solos** cada mes — hay que registrar cada uno cuando ocurre.
+- **Comisión de tarjeta configurable.** Un campo donde se define el % que cobra el banco/datáfono por cada pago con tarjeta (se puede cambiar cuando quieras). Este dato **nunca se muestra** en los reportes normales de Ventas ni a la empleada — solo se usa por dentro para calcular la ganancia real del admin.
+- **Resumen de rentabilidad**, con selector de rango de fechas: Ingresos por ventas, Costo estimado de mercadería vendida, Comisión de tarjeta, Gastos del periodo, y **Ganancia neta estimada**. Se puede descargar como Excel.
+- El costo de mercadería vendida es un **estimado** (costo unitario vigente × cantidad de prendas vendidas), no el costo exacto de cada prenda individual — es la misma lógica de "costo promedio por paca" que ya usan para decidir precios, aplicada ahora también para medir ganancia.
+
 
