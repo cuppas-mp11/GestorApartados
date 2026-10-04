@@ -243,11 +243,32 @@ export interface Expense {
   createdAt: string;
 }
 
-// Configuración financiera general del negocio — hoy solo guarda el porcentaje
-// de comisión que cobra el banco/datáfono por pagos con tarjeta (editable en
-// cualquier momento si el banco cambia la tasa). Un solo documento en Firestore.
+// Costo chiquito que se suma a CADA prenda vendida (planchado, bolsa/empaque,
+// plástico + etiqueta, etc.) al calcular la ganancia real — a diferencia de los
+// `Expense` de arriba, este NO se registra como un monto del mes: el sistema lo
+// multiplica solo por la cantidad de prendas vendidas en el rango. Editable en
+// cualquier momento si cambia el precio (ej. suben las bolsas).
+export interface UnitCostItem {
+  id: string;
+  label: string; // ej. "Planchado", "Empaque (bolsa)", "Plástico + etiqueta"
+  amount: number; // Q por cada prenda vendida
+}
+
+// Configuración financiera general del negocio — un solo documento en Firestore,
+// editable en cualquier momento (ej. si el banco cambia su tasa, o cambia el %
+// de comisión de la vendedora de un mes a otro).
 export interface FinanceSettings {
+  // Comisión que cobra el procesador de tarjeta (ej. Visa) por cada transacción
+  // — SOLO aplica a lo que se pagó con tarjeta.
   cardCommissionPercent: number; // ej. 5 significa 5%
+  // IVA de la factura que se genera en pagos con tarjeta Y con transferencia/
+  // depósito (en efectivo/otro no se genera factura, así que no aplica).
+  invoiceTaxPercent: number;
+  // % que recibe la vendedora sobre la ganancia neta del periodo (ya descontado
+  // el costo de la paca, los costos por prenda, la comisión de tarjeta y el IVA).
+  vendorCommissionPercent: number;
+  // Costos fijos por cada prenda vendida (planchado, empaque, plástico, etc.)
+  unitCosts: UnitCostItem[];
   updatedByEmail?: string;
   updatedAt?: string;
 }

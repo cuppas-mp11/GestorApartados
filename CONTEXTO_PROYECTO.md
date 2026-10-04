@@ -29,7 +29,7 @@ Tienda de ropa de **segunda mano / retorno, premium, exclusivamente para mujer**
 - `editLogs` — Historial de correcciones a datos de apartados.
 - `baleCosts` — **(Fase 3, visible SOLO para admin)** Historial de cálculos de costo por "paca" (paquete de ropa comprado por precio y cantidad): `balePrice`, `quantity`, `unitCost` (ya calculado), `date`, `note?`. El cálculo más reciente es el "costo vigente" que se usa para estimar la ganancia real.
 - `expenses` — **(Fase 3, visible SOLO para admin)** Gastos fijos/variables del negocio: `category` (renta/planilla/servicios/empaque/otro), `frequency` (fixed/variable), `amount`, `date`, `note?`.
-- `settings` — **(Fase 3, visible SOLO para admin)** Un solo documento (ID `finance`) con `cardCommissionPercent`: el % que cobra el banco/datáfono por pagos con tarjeta, editable en cualquier momento.
+- `settings` — **(Fase 3, visible SOLO para admin)** Un solo documento (ID `finance`) con: `cardCommissionPercent` (% del procesador de tarjeta, ej. Visa, solo aplica a tarjeta), `invoiceTaxPercent` (% de IVA de factura, aplica a tarjeta Y transferencia/depósito), `vendorCommissionPercent` (% que recibe la vendedora sobre la ganancia neta del periodo), y `unitCosts[]` (lista editable de costos por cada prenda vendida, ej. Planchado Q5.00, Empaque Q0.08 — no son gasto mensual, se multiplican por la cantidad de prendas vendidas). Todo editable en cualquier momento.
 
 ## Reglas de seguridad ya configuradas
 
@@ -88,7 +88,11 @@ Todo el sistema calculaba "hoy" usando la hora UTC en vez de la hora de Guatemal
   - **Costo por paca**: como la mercadería se compra por paca (paquete) y no por prenda, se registra "Precio de paca" + "Cantidad de prendas", el sistema calcula el costo unitario solo, y queda un historial con fecha (para ver cómo ha variado el costo). El cálculo más reciente es el "costo vigente" que se usa para estimar la ganancia.
   - **Gastos fijos/variables**: categorías fijas (Renta, Planilla, Servicios, Empaque, Otro — este último con nota obligatoria), marcando si es fijo o variable. No se repiten solos cada mes, hay que registrar cada uno.
   - **Comisión de tarjeta**: % configurable en cualquier momento, oculto a empleada/clienta, usado solo para el cálculo interno de ganancia real.
-  - **Resumen de rentabilidad** por rango de fechas (Ingresos, Costo de mercadería vendida estimado, Comisión de tarjeta, Gastos, Ganancia neta), descargable en Excel.
+  - **Costos por prenda vendida** (Planchado, Empaque, Plástico/Etiqueta, etc.): se configuran como un monto Q por cada prenda vendida (no un gasto mensual suelto), editable cuando cambien de precio — el sistema los multiplica solo por la cantidad de prendas vendidas en el rango.
+  - **IVA de factura**: % separado de la comisión de tarjeta, porque aplica tanto a pagos con tarjeta como con transferencia/depósito (ambos generan factura), mientras que la comisión de tarjeta solo aplica a tarjeta.
+  - **Comisión de vendedora**: % editable (puede cambiar cada mes) que se calcula sobre la **ganancia neta** del periodo (ya descontados costo de paca, costos por prenda, comisión de tarjeta e IVA). Nunca es negativa — si el periodo cierra en pérdida, la comisión es Q0.00. Se calcula **por separado para cada vendedora** según lo que ella vendió (usa `soldByEmail`/alias de cada venta), para cuando haya más de una.
+  - **Resumen de rentabilidad** por rango de fechas, con la cadena completa: Ingresos → costo de paca → costos por prenda → comisión de tarjeta → IVA de factura → Ganancia neta → comisión de vendedora → gastos del periodo → Ganancia final. Incluye el desglose de comisión por cada vendedora. Todo descargable en Excel.
+  - Este diseño nació de analizar el Excel manual que ya usaban (`EJEMPLO_GANANCIAS_Y_COMISION_VENDEDORA`), que calculaba lo mismo pero a mano, fila por fila, por "modalidad de pago", recontando artículos vendidos cada mes — ahora el sistema lo calcula solo a partir de las ventas reales ya registradas, sin recontar nada.
 - ⏳ **Pendiente transversal**: subir el logo real de la tienda a `public/logo.png` (hoy hay un ícono de respaldo tipo "bolsa").
 
 ## Cómo prefiere trabajar la usuaria

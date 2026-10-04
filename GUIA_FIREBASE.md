@@ -298,4 +298,18 @@ Clic en **"Publicar"**.
 - **Resumen de rentabilidad**, con selector de rango de fechas: Ingresos por ventas, Costo estimado de mercadería vendida, Comisión de tarjeta, Gastos del periodo, y **Ganancia neta estimada**. Se puede descargar como Excel.
 - El costo de mercadería vendida es un **estimado** (costo unitario vigente × cantidad de prendas vendidas), no el costo exacto de cada prenda individual — es la misma lógica de "costo promedio por paca" que ya usan para decidir precios, aplicada ahora también para medir ganancia.
 
+---
+
+## Paso 11: Comisión de vendedora y costos por prenda (✅ no requiere cambios de reglas)
+
+Esta actualización **no agrega colecciones nuevas** — todo vive dentro del mismo documento `settings/finance` que ya tenías de la Fase 3, así que **no hay que tocar las reglas de Firebase para esto**. Si ya publicaste las reglas del Paso 10, no necesitas hacer nada aquí.
+
+**Qué se agregó:**
+
+- **Costos por prenda vendida.** En vez de registrar planchado, bolsas, plástico y etiquetas como un gasto mensual suelto, ahora se configuran como un monto fijo **por cada prenda vendida** (ej. "Planchado: Q5.00", "Empaque: Q0.08"), editable cuando cambien de precio. El sistema los multiplica automáticamente por la cantidad de prendas vendidas en el rango que estés revisando — no hay que llevar la cuenta a mano.
+- **IVA de factura**, separado de la comisión de tarjeta: un % que aplica tanto a lo pagado con tarjeta como a lo pagado por transferencia/depósito (ambos generan factura), mientras que la comisión de tarjeta (el cobro del procesador, ej. Visa) solo aplica a lo pagado con tarjeta.
+- **Comisión de vendedora**, un % editable (puede cambiar cada mes) que se calcula sobre la **ganancia neta** del periodo — es decir, después de restar el costo de paca, los costos por prenda, la comisión de tarjeta y el IVA. Si el periodo cierra en pérdida, la comisión es Q0.00, nunca un número negativo.
+- **Comisión por vendedora**, calculada por separado para cada quien según lo que ella vendió (usando el correo/alias que ya queda registrado en cada venta) — si en el futuro hay más de una vendedora, cada una ve su propio desglose y su propia comisión, sin que alguien tenga que separar las ventas a mano.
+- El resumen de rentabilidad ahora muestra la cadena completa: Ingresos → costo de paca → costos por prenda → comisión de tarjeta → IVA de factura → **Ganancia neta** → comisión de vendedora → gastos del periodo → **Ganancia final**. Todo descargable en el mismo Excel.
+
 

@@ -8,11 +8,11 @@ import {
   getSalesInRange,
   getExpensesInRange,
   getExpensesTotal,
-  getCardTotalForSales,
-  getCardCommission,
   getCurrentUnitCost,
-  getSaleTotal,
-  getSaleItemsCount,
+  getUnitCostsTotal,
+  calculateProfitability,
+  calculateCommissionsBySeller,
+  getDisplayName,
 } from '../utils';
 
 interface ProfitabilitySummaryProps {
@@ -20,6 +20,7 @@ interface ProfitabilitySummaryProps {
   expenses: Expense[];
   baleCosts: BaleCostEntry[];
   settings: FinanceSettings;
+  aliases: Record<string, string>;
 }
 
 const todayStr = () => getLocalDateStr();
@@ -28,38 +29,47 @@ const firstOfMonthStr = () => {
   return getLocalDateStr(new Date(d.getFullYear(), d.getMonth(), 1));
 };
 
-export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({ sales, expenses, baleCosts, settings }) => {
+export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({ sales, expenses, baleCosts, settings, aliases }) => {
   const [start, setStart] = useState(firstOfMonthStr());
   const [end, setEnd] = useState(todayStr());
 
   const rangeSales = getSalesInRange(sales, start, end);
   const rangeExpenses = getExpensesInRange(expenses, start, end);
+  const unitCostVigente = getCurrentUnitCost(baleCosts);
+  const unitCostsExtra = getUnitCostsTotal(settings.unitCosts || []);
+  const hasUnitCost = unitCostVigente > 0;
 
-  const revenue = rangeSales.reduce((acc, s) => acc + getSaleTotal(s), 0);
-  const itemsSold = rangeSales.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
-  const unitCost = getCurrentUnitCost(baleCosts);
-  const cogs = itemsSold * unitCost;
-  const cardTotal = getCardTotalForSales(rangeSales);
-  const cardCommission = getCardCommission(cardTotal, settings.cardCommissionPercent || 0);
+  const breakdown = calculateProfitability(rangeSales, unitCostVigente, settings);
   const expensesTotal = getExpensesTotal(rangeExpenses);
-  const netProfit = revenue - cogs - cardCommission - expensesTotal;
+  const finalProfit = breakdown.profitAfterCommission - expensesTotal;
 
-  const hasUnitCost = unitCost > 0;
+  const bySeller = calculateCommissionsBySeller(rangeSales, unitCostVigente, settings);
 
   const exportExcel = () => {
     const rows: (string | number)[][] = [];
-    rows.push(['Vestimenta GT — Rentabilidad']);
+    rows.push(['Vestimenta GT — Rentabilidad y comisión']);
     rows.push([`Del ${formatDate(start)} al ${formatDate(end)}`]);
     rows.push([]);
     rows.push(['Concepto', 'Monto (Q)']);
-    rows.push(['Ingresos por ventas', revenue]);
-    rows.push(['Prendas vendidas', itemsSold]);
-    rows.push(['Costo unitario vigente (Q/prenda)', unitCost]);
-    rows.push(['Costo de mercadería vendida (estimado)', -cogs]);
-    rows.push(['Total cobrado con tarjeta', cardTotal]);
-    rows.push([`Comisión de tarjeta (${settings.cardCommissionPercent}%)`, -cardCommission]);
-    rows.push(['Gastos del periodo', -expensesTotal]);
-    rows.push(['GANANCIA NETA ESTIMADA', netProfit]);
+    rows.push(['Ingresos por ventas', breakdown.revenue]);
+    rows.push(['Prendas vendidas', breakdown.itemsSold]);
+    rows.push(['Costo de paca (estimado)', -breakdown.cogsPaca]);
+    rows.push(['Costos por prenda (planchado, empaque, etc.)', -breakdown.cogsUnitCosts]);
+    rows.push(['Total pagado con tarjeta', breakdown.cardTotal]);
+    rows.push([`Comisión de tarjeta (${settings.cardCommissionPercent}%)`, -breakdown.cardFee]);
+    rows.push(['Total pagado con transferencia/depósito', breakdown.transferTotal]);
+    rows.push([`IVA de factura (${settings.invoiceTaxPercent}%, tarjeta + transferencia)`, -breakdown.invoiceTax]);
+    rows.push(['GANANCIA NETA (base de comisión)', breakdown.netProfit]);
+    rows.push([`Comisión de vendedora (${settings.vendorCommissionPercent}%)`, -breakdown.vendorCommission]);
+    rows.push(['Ganancia después de comisión', breakdown.profitAfterCommission]);
+    rows.push(['Gastos fijos/variables del periodo', -expensesTotal]);
+    rows.push(['GANANCIA FINAL', finalProfit]);
+    rows.push([]);
+    rows.push(['Comisión por vendedora']);
+    rows.push(['Vendedora', 'Prendas vendidas', 'Ingresos (Q)', 'Ganancia neta (Q)', 'Comisión (Q)']);
+    bySeller.forEach((s) =>
+      rows.push([getDisplayName(s.email, aliases), s.breakdown.itemsSold, s.breakdown.revenue, s.breakdown.netProfit, s.breakdown.vendorCommission])
+    );
     rows.push([]);
     rows.push(['Detalle de gastos del periodo']);
     rows.push(['Fecha', 'Categoría', 'Tipo', 'Monto (Q)', 'Nota']);
@@ -76,7 +86,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({ sale
   return (
     <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resumen de rentabilidad</p>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resumen de rentabilidad y comisión</p>
         <button
           onClick={exportExcel}
           className="flex items-center gap-2 bg-slate-800 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition"
@@ -99,41 +109,67 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({ sale
       {!hasUnitCost && (
         <div className="bg-[#c9a876]/10 border border-[#c9a876]/30 rounded-xl px-3 py-2 mb-4">
           <p className="text-[11px] font-bold text-[#8a6a3f]">
-            ⚠️ Aún no has registrado ningún cálculo de costo de paca — el costo de mercadería vendida se está calculando como Q0.00. Regístralo en el panel de la derecha para una ganancia real más exacta.
+            ⚠️ Aún no has registrado ningún cálculo de costo de paca — el costo de mercadería vendida se está calculando como Q0.00.
           </p>
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-        <div className="p-3 rounded-xl bg-[#2bb297]/5 border border-[#2bb297]/20">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Ingresos</p>
-          <p className="text-lg font-black text-[#1a8a72] mt-1">{formatCurrency(revenue)}</p>
-          <p className="text-[9px] font-bold text-slate-400 mt-0.5">{rangeSales.length} venta(s) · {itemsSold} prenda(s)</p>
-        </div>
-        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Costo mercadería</p>
-          <p className="text-lg font-black text-slate-600 mt-1">-{formatCurrency(cogs)}</p>
-          <p className="text-[9px] font-bold text-slate-400 mt-0.5">{formatCurrency(unitCost)} × {itemsSold}</p>
-        </div>
-        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Comisión tarjeta</p>
-          <p className="text-lg font-black text-slate-600 mt-1">-{formatCurrency(cardCommission)}</p>
-          <p className="text-[9px] font-bold text-slate-400 mt-0.5">{formatCurrency(cardTotal)} al {settings.cardCommissionPercent || 0}%</p>
-        </div>
-        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Gastos del periodo</p>
-          <p className="text-lg font-black text-slate-600 mt-1">-{formatCurrency(expensesTotal)}</p>
-          <p className="text-[9px] font-bold text-slate-400 mt-0.5">{rangeExpenses.length} registro(s)</p>
-        </div>
-        <div className={`p-3 rounded-xl border col-span-2 sm:col-span-1 ${netProfit >= 0 ? 'bg-[#1a8a72]/10 border-[#1a8a72]/30' : 'bg-[#8c3a4b]/10 border-[#8c3a4b]/30'}`}>
-          <p className="text-[9px] font-black text-slate-400 uppercase">Ganancia neta estimada</p>
-          <p className={`text-xl font-black mt-1 ${netProfit >= 0 ? 'text-[#1a8a72]' : 'text-[#8c3a4b]'}`}>{formatCurrency(netProfit)}</p>
-        </div>
+      {/* ---- Cadena de cálculo del negocio ---- */}
+      <div className="space-y-1.5 mb-5">
+        <Row label="Ingresos por ventas" value={breakdown.revenue} sub={`${rangeSales.length} venta(s) · ${breakdown.itemsSold} prenda(s)`} positive />
+        <Row label="Costo de paca" value={-breakdown.cogsPaca} sub={`${formatCurrency(unitCostVigente)} × ${breakdown.itemsSold}`} />
+        <Row label="Costos por prenda" value={-breakdown.cogsUnitCosts} sub={`${formatCurrency(unitCostsExtra)} × ${breakdown.itemsSold}`} />
+        <Row label="Comisión de tarjeta" value={-breakdown.cardFee} sub={`${settings.cardCommissionPercent || 0}% de ${formatCurrency(breakdown.cardTotal)}`} />
+        <Row label="IVA de factura" value={-breakdown.invoiceTax} sub={`${settings.invoiceTaxPercent || 0}% de ${formatCurrency(breakdown.cardTotal + breakdown.transferTotal)} (tarjeta + transf.)`} />
+        <Row label="Ganancia neta" value={breakdown.netProfit} bold divider />
+        <Row label="Comisión de vendedora" value={-breakdown.vendorCommission} sub={`${settings.vendorCommissionPercent || 0}% de la ganancia neta`} />
+        <Row label="Ganancia después de comisión" value={breakdown.profitAfterCommission} bold />
+        <Row label="Gastos del periodo" value={-expensesTotal} sub={`${rangeExpenses.length} registro(s)`} />
+        <Row label="GANANCIA FINAL" value={finalProfit} bold big divider />
       </div>
 
-      <p className="text-[9px] text-slate-400 font-bold leading-relaxed">
-        El costo de mercadería es un estimado (costo unitario vigente × prendas vendidas en el rango), no un costo exacto por prenda individual — así compran la mercadería (por paca, no por prenda). Los gastos fijos deben registrarse cada mes en el panel de gastos; el sistema no los repite automáticamente.
+      {/* ---- Comisión por vendedora ---- */}
+      <div className="border-t border-slate-100 pt-4">
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Comisión por vendedora</p>
+        {bySeller.length === 0 ? (
+          <p className="text-center text-slate-400 py-3 text-xs">No hay ventas registradas en este rango.</p>
+        ) : (
+          <div className="space-y-2">
+            {bySeller.map((s) => (
+              <div key={s.email} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5">
+                <div>
+                  <p className="text-sm font-black text-slate-700">{getDisplayName(s.email, aliases)}</p>
+                  <p className="text-[10px] text-slate-400 font-bold">
+                    {s.breakdown.itemsSold} prenda(s) · {formatCurrency(s.breakdown.revenue)} en ventas · ganancia neta {formatCurrency(s.breakdown.netProfit)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] font-black text-slate-400 uppercase">Comisión</p>
+                  <p className="text-lg font-black text-[#c9a876]">{formatCurrency(s.breakdown.vendorCommission)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p className="text-[9px] text-slate-400 font-bold leading-relaxed mt-4 pt-3 border-t border-slate-100">
+        El costo de mercadería es un estimado (costo unitario vigente × prendas vendidas), no el costo exacto de cada prenda individual. La comisión de tarjeta y el IVA de factura se calculan sobre lo realmente cobrado por cada método en el rango. Si el periodo cierra en pérdida, la comisión de vendedora es Q0.00, nunca negativa. Los gastos fijos deben registrarse cada mes en el panel de Gastos — el sistema no los repite solo.
       </p>
     </div>
   );
 };
+
+const Row: React.FC<{ label: string; value: number; sub?: string; positive?: boolean; bold?: boolean; big?: boolean; divider?: boolean }> = ({
+  label, value, sub, positive, bold, big, divider,
+}) => (
+  <div className={`flex items-center justify-between px-3 py-2 rounded-lg ${divider ? 'bg-[#2bb297]/5 border border-[#2bb297]/20' : ''}`}>
+    <div>
+      <p className={`${bold ? 'font-black' : 'font-bold'} ${big ? 'text-sm' : 'text-xs'} text-slate-700`}>{label}</p>
+      {sub && <p className="text-[9px] text-slate-400 font-bold">{sub}</p>}
+    </div>
+    <p className={`${bold ? 'font-black' : 'font-bold'} ${big ? 'text-lg' : 'text-sm'} ${value < 0 ? 'text-[#8c3a4b]' : positive || value > 0 ? 'text-[#1a8a72]' : 'text-slate-500'}`}>
+      {value < 0 ? '-' : ''}{formatCurrency(Math.abs(value))}
+    </p>
+  </div>
+);

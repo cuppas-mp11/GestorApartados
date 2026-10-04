@@ -74,7 +74,12 @@ const BALE_COSTS_COLLECTION = 'baleCosts';
 const EXPENSES_COLLECTION = 'expenses';
 const SETTINGS_COLLECTION = 'settings';
 const FINANCE_SETTINGS_DOC_ID = 'finance';
-const DEFAULT_FINANCE_SETTINGS: FinanceSettings = { cardCommissionPercent: 0 };
+const DEFAULT_FINANCE_SETTINGS: FinanceSettings = {
+  cardCommissionPercent: 0,
+  invoiceTaxPercent: 0,
+  vendorCommissionPercent: 0,
+  unitCosts: [],
+};
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -965,13 +970,18 @@ const App: React.FC = () => {
     await deleteDoc(doc(db, EXPENSES_COLLECTION, id));
   };
 
-  const saveFinanceSettings = async (cardCommissionPercent: number) => {
+  const saveFinanceSettings = async (updates: {
+    cardCommissionPercent: number;
+    invoiceTaxPercent: number;
+    vendorCommissionPercent: number;
+    unitCosts: FinanceSettings['unitCosts'];
+  }) => {
     if (role !== 'admin') {
       alert('Solo un administrador puede cambiar esta configuración.');
       return;
     }
     const updated: FinanceSettings = {
-      cardCommissionPercent,
+      ...updates,
       updatedByEmail: user?.email || 'desconocido',
       updatedAt: new Date().toISOString(),
     };
@@ -1267,7 +1277,7 @@ const App: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                  <ProfitabilitySummary sales={sales} expenses={expenses} baleCosts={baleCosts} settings={financeSettings} />
+                  <ProfitabilitySummary sales={sales} expenses={expenses} baleCosts={baleCosts} settings={financeSettings} aliases={aliases} />
                   <ExpensesPanel expenses={expenses} aliases={aliases} onAdd={addExpense} onDelete={deleteExpense} />
                 </div>
                 <div className="space-y-6">

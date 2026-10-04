@@ -1,4 +1,4 @@
-import { Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer, BaleCostEntry, Expense } from './types';
+import { Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer, BaleCostEntry, Expense, UnitCostItem, FinanceSettings } from './types';
 
 // Plazo de vencimiento centralizado (antes estaba repetido en 3 archivos distintos)
 export const DEADLINE_DAYS = 15;
@@ -267,10 +267,101 @@ export const getExpensesInRange = (expenses: Expense[], start: string, end: stri
 export const getExpensesTotal = (expenses: Expense[]): number =>
   expenses.reduce((acc, e) => acc + (e.amount || 0), 0);
 
-// Cuánto se pagó con tarjeta dentro de un conjunto de ventas (para calcular la
-// comisión real del banco sobre lo efectivamente cobrado por ese medio).
-export const getCardTotalForSales = (sales: Sale[]): number =>
-  sales.reduce((acc, s) => acc + s.payments.filter((p) => p.method === 'card').reduce((a, p) => a + p.amount, 0), 0);
+// Cuánto se pagó con un método específico dentro de un conjunto de ventas.
+export const getPaymentMethodTotal = (sales: Sale[], method: PaymentMethod): number =>
+  sales.reduce((acc, s) => acc + s.payments.filter((p) => p.method === method).reduce((a, p) => a + p.amount, 0), 0);
+
+// Cuánto se pagó con tarjeta (para la comisión del procesador, ej. Visa).
+export const getCardTotalForSales = (sales: Sale[]): number => getPaymentMethodTotal(sales, 'card');
 
 export const getCardCommission = (cardTotal: number, commissionPercent: number): number =>
   cardTotal * (commissionPercent / 100);
+
+// ---- Fase 3: Costos por prenda vendida + comisión de vendedora ----
+
+// Suma de todos los costos configurados por prenda (planchado + empaque +
+// plástico + etiqueta + lo que se agregue), por CADA prenda vendida.
+export const getUnitCostsTotal = (unitCosts: UnitCostItem[]): number =>
+  unitCosts.reduce((acc, u) => acc + (u.amount || 0), 0);
+
+// Correos únicos de quienes vendieron dentro de un conjunto de ventas (para
+// poder calcular la comisión de cada vendedora por separado).
+export const getDistinctSellerEmails = (sales: Sale[]): string[] =>
+  Array.from(new Set(sales.map((s) => s.soldByEmail).filter(Boolean)));
+
+// Desglose completo de rentabilidad para un conjunto de ventas (puede ser todas
+// las del negocio en un rango, o solo las de una vendedora). Sigue el mismo
+// orden que el Excel de la tienda:
+//   Ingresos → costo de paca → costos por prenda → comisión de tarjeta → IVA de
+//   factura (tarjeta + transferencia) → Ganancia neta → comisión de vendedora.
+// Los gastos fijos/variables del periodo (Expenses) NO se incluyen aquí — se
+// restan aparte, a nivel de todo el negocio, para llegar a la ganancia final.
+export interface ProfitabilityBreakdown {
+  revenue: number;
+  itemsSold: number;
+  cogsPaca: number;
+  cogsUnitCosts: number;
+  cardTotal: number;
+  transferTotal: number;
+  cardFee: number;
+  invoiceTax: number;
+  grossProfitAfterCogs: number; // revenue - cogsPaca - cogsUnitCosts
+  netProfit: number; // grossProfitAfterCogs - cardFee - invoiceTax ("ganancia neta", base de la comisión)
+  vendorCommission: number;
+  profitAfterCommission: number; // netProfit - vendorCommission
+}
+
+export const calculateProfitability = (
+  sales: Sale[],
+  unitCostVigente: number,
+  settings: FinanceSettings
+): ProfitabilityBreakdown => {
+  const revenue = sales.reduce((acc, s) => acc + getSaleTotal(s), 0);
+  const itemsSold = sales.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
+  const cogsPaca = itemsSold * unitCostVigente;
+  const cogsUnitCosts = itemsSold * getUnitCostsTotal(settings.unitCosts || []);
+  const cardTotal = getPaymentMethodTotal(sales, 'card');
+  const transferTotal = getPaymentMethodTotal(sales, 'transfer');
+  const cardFee = cardTotal * ((settings.cardCommissionPercent || 0) / 100);
+  const invoiceTax = (cardTotal + transferTotal) * ((settings.invoiceTaxPercent || 0) / 100);
+  const grossProfitAfterCogs = revenue - cogsPaca - cogsUnitCosts;
+  const netProfit = grossProfitAfterCogs - cardFee - invoiceTax;
+  // No se paga comisión sobre una pérdida — si el periodo cerró en negativo, la
+  // comisión de la vendedora es Q0, no un número negativo.
+  const vendorCommission = netProfit > 0 ? netProfit * ((settings.vendorCommissionPercent || 0) / 100) : 0;
+  const profitAfterCommission = netProfit - vendorCommission;
+
+  return {
+    revenue,
+    itemsSold,
+    cogsPaca,
+    cogsUnitCosts,
+    cardTotal,
+    transferTotal,
+    cardFee,
+    invoiceTax,
+    grossProfitAfterCogs,
+    netProfit,
+    vendorCommission,
+    profitAfterCommission,
+  };
+};
+
+export interface SellerCommission {
+  email: string;
+  breakdown: ProfitabilityBreakdown;
+}
+
+// Misma lógica de arriba, pero una fila por cada vendedora (según soldByEmail
+// de cada venta), para pagar la comisión de cada quien según lo que ella vendió.
+export const calculateCommissionsBySeller = (
+  sales: Sale[],
+  unitCostVigente: number,
+  settings: FinanceSettings
+): SellerCommission[] =>
+  getDistinctSellerEmails(sales)
+    .map((email) => ({
+      email,
+      breakdown: calculateProfitability(sales.filter((s) => s.soldByEmail === email), unitCostVigente, settings),
+    }))
+    .sort((a, b) => b.breakdown.revenue - a.breakdown.revenue);
