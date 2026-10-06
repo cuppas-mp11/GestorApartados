@@ -1,4 +1,8 @@
-import { Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer, BaleCostEntry, Expense, UnitCostItem, FinanceSettings } from './types';
+import {
+  Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
+  Paca, PacaReconciliation, Expense, ExpenseCategoryItem, ExpenseTemplate,
+  UnitCostItem, FinanceSettings,
+} from './types';
 
 // Plazo de vencimiento centralizado (antes estaba repetido en 3 archivos distintos)
 export const DEADLINE_DAYS = 15;
@@ -239,27 +243,106 @@ export const isDateInRange = (dateStr: string, start: string, end: string): bool
   return d >= start && d <= end;
 };
 
-// ---- Fase 3: Costos por paca, gastos y rentabilidad (solo admin) ----
+// ---- Fase 3: Catálogo de pacas, costeo manual por sticker y gastos (solo admin) ----
 
-// Historial de cálculos de costo por paca, del más reciente al más antiguo.
-export const sortBaleCostsDesc = (entries: BaleCostEntry[]): BaleCostEntry[] =>
-  [...entries].sort((a, b) => {
-    const byDate = b.date.localeCompare(a.date);
-    if (byDate !== 0) return byDate;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-
-// Costo unitario "vigente": el del cálculo de paca más reciente. Es el que se
-// usa para estimar el costo de la mercadería vendida en el resumen de
-// rentabilidad — si no hay ningún cálculo registrado, es 0 (no se puede estimar).
-export const getCurrentUnitCost = (entries: BaleCostEntry[]): number => {
-  const sorted = sortBaleCostsDesc(entries);
-  return sorted.length > 0 ? sorted[0].unitCost : 0;
+export const getNextPacaCode = (pacas: Paca[]): string => {
+  const nums = pacas.map((p) => parseInt((p.code || '').replace(/\D/g, ''), 10) || 0);
+  const last = nums.length > 0 ? Math.max(...nums) : 0;
+  return `PACA${String(last + 1).padStart(3, '0')}`;
 };
 
-// Ventas COMPLETADAS (no anuladas) cuya fecha cae dentro de un rango [start, end].
-export const getSalesInRange = (sales: Sale[], start: string, end: string): Sale[] =>
-  sales.filter((s) => (s.status as unknown as string) === 'COMPLETED' && isDateInRange(s.date, start, end));
+// Busca una paca YA existente con el MISMO precio y la MISMA cantidad (mismas
+// características = mismo costo unitario), para no crear un código nuevo cada
+// vez que se vuelve a comprar "la misma" paca — se le agrega la fecha a su
+// historial de compras en vez de duplicarla.
+export const findMatchingPaca = (pacas: Paca[], balePrice: number, quantity: number): Paca | undefined =>
+  pacas.find((p) => amountsMatch(p.balePrice, balePrice) && p.quantity === quantity);
+
+// Fecha de la compra más reciente de una paca (puede tener varias si se ha
+// vuelto a comprar con las mismas características).
+export const getLatestPurchaseDate = (paca: Paca): string | undefined => {
+  if (!paca.purchases || paca.purchases.length === 0) return undefined;
+  return [...paca.purchases].sort((a, b) => b.date.localeCompare(a.date))[0].date;
+};
+
+export const sortPacasByLatestPurchase = (pacas: Paca[]): Paca[] =>
+  [...pacas].sort((a, b) => (getLatestPurchaseDate(b) || '').localeCompare(getLatestPurchaseDate(a) || ''));
+
+// Cantidad vendida de un código de prenda dentro de un conjunto de ventas.
+export const getSoldQuantityForCode = (sales: Sale[], code: string): number =>
+  sales.reduce((acc, s) => acc + s.items.filter((it) => it.code === code).reduce((a, it) => a + it.quantity, 0), 0);
+
+export const getDistinctCodesSold = (sales: Sale[]): string[] =>
+  Array.from(new Set(sales.flatMap((s) => s.items.map((it) => it.code))));
+
+// Reconciliaciones (costeos) cuyo rango de fechas cae COMPLETO dentro del rango
+// que se está revisando — si una reconciliación se sale del rango (ej. costeó
+// una semana que cruza de un mes a otro), no se cuenta aquí para evitar mezclar
+// periodos a medias. Conviene costear usando cortes de fecha compatibles con
+// cómo luego se revisa la rentabilidad (ej. por semana completa, o por mes).
+export const getReconciliationsInRange = (
+  reconciliations: PacaReconciliation[],
+  start: string,
+  end: string
+): PacaReconciliation[] =>
+  reconciliations.filter((r) => r.startDate >= start && r.endDate <= end);
+
+export interface CodeCostBreakdown {
+  code: string;
+  soldQuantity: number;
+  costedQuantity: number;
+  pendingQuantity: number;
+  costedTotal: number; // Q, solo de la parte ya costeada
+}
+
+// Para cada código de prenda vendido en el rango, cuánto ya se costeó (según
+// las reconciliaciones admin con sticker) y cuánto sigue pendiente. El costo
+// de lo pendiente NO se estima — se deja fuera de la ganancia y se muestra
+// aparte, para no mezclar un número exacto con uno adivinado.
+export const getCostBreakdownByCode = (
+  sales: Sale[],
+  reconciliations: PacaReconciliation[],
+  pacas: Paca[],
+  start: string,
+  end: string
+): CodeCostBreakdown[] => {
+  const inRangeRecon = getReconciliationsInRange(reconciliations, start, end);
+  const pacaById = new Map(pacas.map((p) => [p.id, p]));
+
+  return getDistinctCodesSold(sales).map((code) => {
+    const soldQuantity = getSoldQuantityForCode(sales, code);
+    let costedQuantity = 0;
+    let costedTotal = 0;
+    inRangeRecon
+      .filter((r) => r.code === code)
+      .forEach((r) => {
+        r.allocations.forEach((a) => {
+          costedQuantity += a.quantity;
+          costedTotal += a.quantity * (pacaById.get(a.pacaId)?.unitCost || 0);
+        });
+      });
+
+    // Nunca mostrar más prendas "costeadas" que las realmente vendidas en el
+    // rango (por si una venta se editó/anuló después de haber costeado).
+    const cappedCosted = Math.min(costedQuantity, soldQuantity);
+    return {
+      code,
+      soldQuantity,
+      costedQuantity: cappedCosted,
+      pendingQuantity: Math.max(0, soldQuantity - cappedCosted),
+      costedTotal: cappedCosted < costedQuantity ? costedTotal * (cappedCosted / Math.max(costedQuantity, 1)) : costedTotal,
+    };
+  });
+};
+
+export const getExpenseCategoryLabel = (categoryId: string, categories: ExpenseCategoryItem[]): string =>
+  categories.find((c) => c.id === categoryId)?.label || 'Sin categoría';
+
+export const getCurrentMonthStr = (date: Date | string = new Date()): string => getLocalDateStr(date).slice(0, 7);
+
+// ¿Ya se confirmó esta plantilla recurrente para el mes indicado ("YYYY-MM")?
+export const isTemplateConfirmedForMonth = (template: ExpenseTemplate, expenses: Expense[], monthStr: string): boolean =>
+  expenses.some((e) => e.templateId === template.id && e.date.startsWith(monthStr));
 
 export const getExpensesInRange = (expenses: Expense[], start: string, end: string): Expense[] =>
   expenses.filter((e) => isDateInRange(e.date, start, end));
@@ -267,17 +350,15 @@ export const getExpensesInRange = (expenses: Expense[], start: string, end: stri
 export const getExpensesTotal = (expenses: Expense[]): number =>
   expenses.reduce((acc, e) => acc + (e.amount || 0), 0);
 
+// Ventas COMPLETADAS (no anuladas) cuya fecha cae dentro de un rango [start, end].
+export const getSalesInRange = (sales: Sale[], start: string, end: string): Sale[] =>
+  sales.filter((s) => (s.status as unknown as string) === 'COMPLETED' && isDateInRange(s.date, start, end));
+
 // Cuánto se pagó con un método específico dentro de un conjunto de ventas.
 export const getPaymentMethodTotal = (sales: Sale[], method: PaymentMethod): number =>
   sales.reduce((acc, s) => acc + s.payments.filter((p) => p.method === method).reduce((a, p) => a + p.amount, 0), 0);
 
-// Cuánto se pagó con tarjeta (para la comisión del procesador, ej. Visa).
-export const getCardTotalForSales = (sales: Sale[]): number => getPaymentMethodTotal(sales, 'card');
-
-export const getCardCommission = (cardTotal: number, commissionPercent: number): number =>
-  cardTotal * (commissionPercent / 100);
-
-// ---- Fase 3: Costos por prenda vendida + comisión de vendedora ----
+// ---- Costos por prenda vendida + comisión de vendedora ----
 
 // Suma de todos los costos configurados por prenda (planchado + empaque +
 // plástico + etiqueta + lo que se agregue), por CADA prenda vendida.
@@ -292,15 +373,18 @@ export const getDistinctSellerEmails = (sales: Sale[]): string[] =>
 // Desglose completo de rentabilidad para un conjunto de ventas (puede ser todas
 // las del negocio en un rango, o solo las de una vendedora). Sigue el mismo
 // orden que el Excel de la tienda:
-//   Ingresos → costo de paca → costos por prenda → comisión de tarjeta → IVA de
-//   factura (tarjeta + transferencia) → Ganancia neta → comisión de vendedora.
+//   Ingresos → costo de paca (solo lo ya costeado por sticker) → costos por
+//   prenda → comisión de tarjeta → IVA de factura (tarjeta + transferencia) →
+//   Ganancia neta → comisión de vendedora.
 // Los gastos fijos/variables del periodo (Expenses) NO se incluyen aquí — se
 // restan aparte, a nivel de todo el negocio, para llegar a la ganancia final.
 export interface ProfitabilityBreakdown {
   revenue: number;
   itemsSold: number;
-  cogsPaca: number;
-  cogsUnitCosts: number;
+  itemsCosted: number; // prendas vendidas que ya tienen paca asignada (costeadas)
+  itemsPending: number; // prendas vendidas sin costear todavía (no se les estima costo)
+  cogsPaca: number; // costo de paca, solo de las prendas costeadas
+  cogsUnitCosts: number; // planchado/empaque/etc., aplica a TODAS las prendas vendidas
   cardTotal: number;
   transferTotal: number;
   cardFee: number;
@@ -313,12 +397,20 @@ export interface ProfitabilityBreakdown {
 
 export const calculateProfitability = (
   sales: Sale[],
-  unitCostVigente: number,
-  settings: FinanceSettings
+  pacas: Paca[],
+  reconciliations: PacaReconciliation[],
+  settings: FinanceSettings,
+  start: string,
+  end: string
 ): ProfitabilityBreakdown => {
   const revenue = sales.reduce((acc, s) => acc + getSaleTotal(s), 0);
   const itemsSold = sales.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
-  const cogsPaca = itemsSold * unitCostVigente;
+
+  const byCode = getCostBreakdownByCode(sales, reconciliations, pacas, start, end);
+  const cogsPaca = byCode.reduce((acc, c) => acc + c.costedTotal, 0);
+  const itemsCosted = byCode.reduce((acc, c) => acc + c.costedQuantity, 0);
+  const itemsPending = byCode.reduce((acc, c) => acc + c.pendingQuantity, 0);
+
   const cogsUnitCosts = itemsSold * getUnitCostsTotal(settings.unitCosts || []);
   const cardTotal = getPaymentMethodTotal(sales, 'card');
   const transferTotal = getPaymentMethodTotal(sales, 'transfer');
@@ -334,6 +426,8 @@ export const calculateProfitability = (
   return {
     revenue,
     itemsSold,
+    itemsCosted,
+    itemsPending,
     cogsPaca,
     cogsUnitCosts,
     cardTotal,
@@ -356,12 +450,15 @@ export interface SellerCommission {
 // de cada venta), para pagar la comisión de cada quien según lo que ella vendió.
 export const calculateCommissionsBySeller = (
   sales: Sale[],
-  unitCostVigente: number,
-  settings: FinanceSettings
+  pacas: Paca[],
+  reconciliations: PacaReconciliation[],
+  settings: FinanceSettings,
+  start: string,
+  end: string
 ): SellerCommission[] =>
   getDistinctSellerEmails(sales)
     .map((email) => ({
       email,
-      breakdown: calculateProfitability(sales.filter((s) => s.soldByEmail === email), unitCostVigente, settings),
+      breakdown: calculateProfitability(sales.filter((s) => s.soldByEmail === email), pacas, reconciliations, settings, start, end),
     }))
     .sort((a, b) => b.breakdown.revenue - a.breakdown.revenue);

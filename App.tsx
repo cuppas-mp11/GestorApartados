@@ -23,10 +23,13 @@ import {
   SaleStatus,
   StockAllocation,
   CreditTransaction,
-  BaleCostEntry,
+  Paca,
+  PacaPurchase,
+  PacaReconciliation,
   Expense,
-  ExpenseCategory,
+  ExpenseCategoryItem,
   ExpenseFrequency,
+  ExpenseTemplate,
   FinanceSettings,
 } from './types';
 import { ReservationForm } from './components/ReservationForm';
@@ -38,7 +41,8 @@ import { LotsPanel } from './components/LotsPanel';
 import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
-import { BaleCostsPanel } from './components/BaleCostsPanel';
+import { PacasPanel } from './components/PacasPanel';
+import { PacaReconciliationPanel } from './components/PacaReconciliationPanel';
 import { ExpensesPanel } from './components/ExpensesPanel';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
 import { ProfitabilitySummary } from './components/ProfitabilitySummary';
@@ -62,6 +66,8 @@ import {
   normalizeSale,
   getLocalDateStr,
   isSameLocalDay,
+  getNextPacaCode,
+  findMatchingPaca,
 } from './utils';
 
 const RESERVATIONS_COLLECTION = 'reservations';
@@ -70,7 +76,10 @@ const CUSTOMERS_COLLECTION = 'customers';
 const LOTS_COLLECTION = 'lots';
 const SALES_COLLECTION = 'sales';
 const CREDIT_LEDGER_COLLECTION = 'creditLedger';
-const BALE_COSTS_COLLECTION = 'baleCosts';
+const PACAS_COLLECTION = 'pacas';
+const PACA_RECONCILIATIONS_COLLECTION = 'pacaReconciliations';
+const EXPENSE_CATEGORIES_COLLECTION = 'expenseCategories';
+const EXPENSE_TEMPLATES_COLLECTION = 'expenseTemplates';
 const EXPENSES_COLLECTION = 'expenses';
 const SETTINGS_COLLECTION = 'settings';
 const FINANCE_SETTINGS_DOC_ID = 'finance';
@@ -93,7 +102,10 @@ const App: React.FC = () => {
   const [lots, setLots] = useState<Lot[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [creditLedger, setCreditLedger] = useState<CreditTransaction[]>([]);
-  const [baleCosts, setBaleCosts] = useState<BaleCostEntry[]>([]);
+  const [pacas, setPacas] = useState<Paca[]>([]);
+  const [pacaReconciliations, setPacaReconciliations] = useState<PacaReconciliation[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryItem[]>([]);
+  const [expenseTemplates, setExpenseTemplates] = useState<ExpenseTemplate[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [financeSettings, setFinanceSettings] = useState<FinanceSettings>(DEFAULT_FINANCE_SETTINGS);
   const [dataLoading, setDataLoading] = useState(true);
@@ -233,21 +245,42 @@ const App: React.FC = () => {
   }, [user]);
 
   // Fase 3 — Costos, gastos y rentabilidad: colecciones visibles SOLO para admin.
-  // Las reglas de Firestore ya lo exigen (ver GUIA_FIREBASE.md, Paso 10); aquí
-  // además evitamos intentar suscribirse si el usuario no es admin, para no
-  // generar errores de "permiso denegado" en la consola de una empleada.
+  // Las reglas de Firestore ya lo exigen (ver GUIA_FIREBASE.md); aquí además
+  // evitamos intentar suscribirse si el usuario no es admin, para no generar
+  // errores de "permiso denegado" en la consola de una empleada.
   useEffect(() => {
     if (!user || role !== 'admin') {
-      setBaleCosts([]);
+      setPacas([]);
+      setPacaReconciliations([]);
+      setExpenseCategories([]);
+      setExpenseTemplates([]);
       setExpenses([]);
       setFinanceSettings(DEFAULT_FINANCE_SETTINGS);
       return;
     }
 
-    const unsubBaleCosts = onSnapshot(
-      collection(db, BALE_COSTS_COLLECTION),
-      (snapshot) => setBaleCosts(snapshot.docs.map((d) => d.data() as BaleCostEntry)),
-      (error) => console.error('Error leyendo cálculos de costo de paca:', error)
+    const unsubPacas = onSnapshot(
+      collection(db, PACAS_COLLECTION),
+      (snapshot) => setPacas(snapshot.docs.map((d) => d.data() as Paca)),
+      (error) => console.error('Error leyendo catálogo de pacas:', error)
+    );
+
+    const unsubReconciliations = onSnapshot(
+      collection(db, PACA_RECONCILIATIONS_COLLECTION),
+      (snapshot) => setPacaReconciliations(snapshot.docs.map((d) => d.data() as PacaReconciliation)),
+      (error) => console.error('Error leyendo costeos de pacas:', error)
+    );
+
+    const unsubExpenseCategories = onSnapshot(
+      collection(db, EXPENSE_CATEGORIES_COLLECTION),
+      (snapshot) => setExpenseCategories(snapshot.docs.map((d) => d.data() as ExpenseCategoryItem)),
+      (error) => console.error('Error leyendo categorías de gasto:', error)
+    );
+
+    const unsubExpenseTemplates = onSnapshot(
+      collection(db, EXPENSE_TEMPLATES_COLLECTION),
+      (snapshot) => setExpenseTemplates(snapshot.docs.map((d) => d.data() as ExpenseTemplate)),
+      (error) => console.error('Error leyendo plantillas de gasto:', error)
     );
 
     const unsubExpenses = onSnapshot(
@@ -263,7 +296,10 @@ const App: React.FC = () => {
     );
 
     return () => {
-      unsubBaleCosts();
+      unsubPacas();
+      unsubReconciliations();
+      unsubExpenseCategories();
+      unsubExpenseTemplates();
       unsubExpenses();
       unsubSettings();
     };
@@ -912,38 +948,94 @@ const App: React.FC = () => {
 
   // ---- Fase 3: Costos, gastos y rentabilidad (solo admin) ----
 
-  const addBaleCost = async (balePrice: number, quantity: number, date: string, note: string) => {
+  // Registra la compra de una paca. Si ya existe una paca con el MISMO precio
+  // y la MISMA cantidad, no se crea un código nuevo — se le agrega esta fecha
+  // a su historial de compras (purchases).
+  const registerPacaPurchase = async (balePrice: number, quantity: number, date: string, note: string) => {
     if (role !== 'admin') {
-      alert('Solo un administrador puede registrar cálculos de costo.');
+      alert('Solo un administrador puede registrar pacas.');
       return;
     }
-    const entry: BaleCostEntry = {
+    const purchase: PacaPurchase = {
       id: generateId(),
       date,
+      createdByEmail: user?.email || 'desconocido',
+      createdAt: new Date().toISOString(),
+    };
+    const existing = findMatchingPaca(pacas, balePrice, quantity);
+    if (existing) {
+      await updateDoc(doc(db, PACAS_COLLECTION, existing.id), {
+        purchases: [...existing.purchases, purchase],
+      });
+      return;
+    }
+    const paca: Paca = {
+      id: generateId(),
+      code: getNextPacaCode(pacas),
       balePrice,
       quantity,
       unitCost: balePrice / quantity,
       note: note || undefined,
+      purchases: [purchase],
       createdByEmail: user?.email || 'desconocido',
       createdAt: new Date().toISOString(),
     };
-    await setDoc(doc(db, BALE_COSTS_COLLECTION, entry.id), entry);
+    await setDoc(doc(db, PACAS_COLLECTION, paca.id), paca);
   };
 
-  const deleteBaleCost = async (id: string) => {
+  // Guarda (o edita) un costeo: cuántas prendas de un código, en un rango de
+  // fechas, salieron de cada paca — según el sticker físico que revisó el admin.
+  const savePacaReconciliation = async (
+    data: Omit<PacaReconciliation, 'id' | 'createdByEmail' | 'createdAt'>,
+    existingId?: string
+  ) => {
     if (role !== 'admin') {
-      alert('Solo un administrador puede eliminar cálculos de costo.');
+      alert('Solo un administrador puede costear ventas.');
       return;
     }
-    await deleteDoc(doc(db, BALE_COSTS_COLLECTION, id));
+    if (existingId) {
+      await updateDoc(doc(db, PACA_RECONCILIATIONS_COLLECTION, existingId), {
+        ...data,
+        updatedByEmail: user?.email || 'desconocido',
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    const reconciliation: PacaReconciliation = {
+      ...data,
+      id: generateId(),
+      createdByEmail: user?.email || 'desconocido',
+      createdAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, PACA_RECONCILIATIONS_COLLECTION, reconciliation.id), reconciliation);
+  };
+
+  const deletePacaReconciliation = async (id: string) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede eliminar un costeo.');
+      return;
+    }
+    await deleteDoc(doc(db, PACA_RECONCILIATIONS_COLLECTION, id));
+  };
+
+  const addExpenseCategory = async (id: string, label: string) => {
+    if (role !== 'admin') return;
+    const category: ExpenseCategoryItem = {
+      id,
+      label,
+      createdByEmail: user?.email || 'desconocido',
+      createdAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, EXPENSE_CATEGORIES_COLLECTION, id), category);
   };
 
   const addExpense = async (
-    category: ExpenseCategory,
+    categoryId: string,
     frequency: ExpenseFrequency,
     amount: number,
     date: string,
-    note: string
+    note: string,
+    templateId?: string
   ) => {
     if (role !== 'admin') {
       alert('Solo un administrador puede registrar gastos.');
@@ -952,14 +1044,31 @@ const App: React.FC = () => {
     const expense: Expense = {
       id: generateId(),
       date,
-      category,
+      categoryId,
       frequency,
       amount,
       note: note || undefined,
+      templateId,
       createdByEmail: user?.email || 'desconocido',
       createdAt: new Date().toISOString(),
     };
     await setDoc(doc(db, EXPENSES_COLLECTION, expense.id), expense);
+  };
+
+  const editExpense = async (
+    id: string,
+    updates: { categoryId: string; frequency: ExpenseFrequency; amount: number; date: string; note: string }
+  ) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede editar gastos.');
+      return;
+    }
+    await updateDoc(doc(db, EXPENSES_COLLECTION, id), {
+      ...updates,
+      note: updates.note || undefined,
+      editedAt: new Date().toISOString(),
+      editedByEmail: user?.email || 'desconocido',
+    });
   };
 
   const deleteExpense = async (id: string) => {
@@ -968,6 +1077,30 @@ const App: React.FC = () => {
       return;
     }
     await deleteDoc(doc(db, EXPENSES_COLLECTION, id));
+  };
+
+  const addExpenseTemplate = async (categoryId: string, defaultAmount: number, note: string) => {
+    if (role !== 'admin') return;
+    const template: ExpenseTemplate = {
+      id: generateId(),
+      categoryId,
+      defaultAmount,
+      note: note || undefined,
+      active: true,
+      createdByEmail: user?.email || 'desconocido',
+      createdAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, EXPENSE_TEMPLATES_COLLECTION, template.id), template);
+  };
+
+  const toggleExpenseTemplateActive = async (id: string, active: boolean) => {
+    if (role !== 'admin') return;
+    await updateDoc(doc(db, EXPENSE_TEMPLATES_COLLECTION, id), { active });
+  };
+
+  const deleteExpenseTemplate = async (id: string) => {
+    if (role !== 'admin') return;
+    await deleteDoc(doc(db, EXPENSE_TEMPLATES_COLLECTION, id));
   };
 
   const saveFinanceSettings = async (updates: {
@@ -1277,12 +1410,41 @@ const App: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                  <ProfitabilitySummary sales={sales} expenses={expenses} baleCosts={baleCosts} settings={financeSettings} aliases={aliases} />
-                  <ExpensesPanel expenses={expenses} aliases={aliases} onAdd={addExpense} onDelete={deleteExpense} />
+                  <ProfitabilitySummary
+                    sales={sales}
+                    expenses={expenses}
+                    categories={expenseCategories}
+                    pacas={pacas}
+                    reconciliations={pacaReconciliations}
+                    settings={financeSettings}
+                    aliases={aliases}
+                  />
+                  <PacaReconciliationPanel
+                    inventory={inventory}
+                    pacas={pacas}
+                    sales={sales}
+                    reconciliations={pacaReconciliations}
+                    aliases={aliases}
+                    onSave={savePacaReconciliation}
+                    onDelete={deletePacaReconciliation}
+                  />
+                  <ExpensesPanel
+                    expenses={expenses}
+                    categories={expenseCategories}
+                    templates={expenseTemplates}
+                    aliases={aliases}
+                    onAddCategory={addExpenseCategory}
+                    onAddExpense={addExpense}
+                    onEditExpense={editExpense}
+                    onDeleteExpense={deleteExpense}
+                    onAddTemplate={addExpenseTemplate}
+                    onToggleTemplateActive={toggleExpenseTemplateActive}
+                    onDeleteTemplate={deleteExpenseTemplate}
+                  />
                 </div>
                 <div className="space-y-6">
                   <FinanceSettingsCard settings={financeSettings} aliases={aliases} onSave={saveFinanceSettings} />
-                  <BaleCostsPanel entries={baleCosts} aliases={aliases} onAdd={addBaleCost} onDelete={deleteBaleCost} />
+                  <PacasPanel pacas={pacas} aliases={aliases} onRegisterPurchase={registerPacaPurchase} />
                 </div>
               </div>
             )

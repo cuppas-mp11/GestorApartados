@@ -312,4 +312,95 @@ Esta actualización **no agrega colecciones nuevas** — todo vive dentro del mi
 - **Comisión por vendedora**, calculada por separado para cada quien según lo que ella vendió (usando el correo/alias que ya queda registrado en cada venta) — si en el futuro hay más de una vendedora, cada una ve su propio desglose y su propia comisión, sin que alguien tenga que separar las ventas a mano.
 - El resumen de rentabilidad ahora muestra la cadena completa: Ingresos → costo de paca → costos por prenda → comisión de tarjeta → IVA de factura → **Ganancia neta** → comisión de vendedora → gastos del periodo → **Ganancia final**. Todo descargable en el mismo Excel.
 
+---
+
+## Paso 12: Catálogo de pacas + costeo manual por sticker + gastos desglosados (⚠️ requiere actualizar las reglas)
+
+Esta actualización **reemplaza** la forma de calcular el costo de la mercadería vendida. Antes se usaba un solo "costo vigente" (el de la última paca calculada) aplicado a todo lo vendido — pero como el lote de la semana casi siempre mezcla prendas de pacas con precios distintos, ese número podía salir mal para cualquier lado. Ahora el costo se asigna a mano, prenda por prenda, usando el sticker de color que ya usan para diferenciar de qué paca salió cada una — exactamente como lo manejan hoy en papel, solo que ahora queda guardado en el sistema.
+
+**La colección `baleCosts` de la Fase 3 original queda reemplazada por `pacas` y `pacaReconciliations`.** Si ya la usabas, esos documentos viejos simplemente dejan de leerse (no hace falta borrarlos a mano, pero puedes hacerlo desde la consola de Firebase si quieres dejar todo limpio). También se agregan `expenseCategories` y `expenseTemplates` para los gastos. La colección `expenses` cambia de forma (ahora usa `categoryId` en vez de una lista fija de categorías) pero mantiene el mismo nombre.
+
+Ve a **Firestore Database → pestaña "Reglas"** y reemplaza TODO el contenido por este bloque (junta todo lo de los Pasos 7 a 12 en un solo lugar actualizado):
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /roles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /reservations/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null && (
+        request.resource.data.status != 'DELETED' ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow delete: if false;
+    }
+    match /inventory/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /customers/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /lots/{id} {
+      allow read, create: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow update: if request.auth != null;
+    }
+    match /editLogs/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
+    }
+    match /sales/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if false;
+    }
+    match /creditLedger/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
+    }
+    match /pacas/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacaReconciliations/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseCategories/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseTemplates/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenses/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /settings/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
+```
+
+Clic en **"Publicar"**.
+
+**Qué se agregó con esta actualización:**
+
+- **Catálogo de Pacas** (dentro de Finanzas). Cada vez que compras una paca, registras su precio y cuántas prendas trajo — si ya existe una paca con el **mismo precio y la misma cantidad**, no se crea un código nuevo, se le agrega esa fecha a su historial (ej. "volviste a comprar la PACA003"). Si las características son distintas, se genera un código nuevo (PACA001, PACA002...).
+- **"Costear ventas por sticker"**. Eliges una prenda (ej. PNT100) y el rango de fechas que te reportó la vendedora (normalmente la semana), el sistema te muestra cuántas se vendieron en ese rango, y repartes esa cantidad entre las pacas correspondientes — igual que un pago combinado, no te deja guardar hasta que la suma cuadre exacto. Esto reemplaza al "costo vigente" único: ahora cada prenda vendida tiene el costo real de la paca de la que salió, aunque esa semana se hayan mezclado varias pacas distintas.
+- **Prendas pendientes de costear.** Mientras no le asignes paca a una venta, el Resumen de Rentabilidad la deja fuera del cálculo y te avisa cuántas prendas siguen pendientes — así nunca ves un número "inflado" por una estimación, solo lo que ya se costeó de verdad.
+- **Categorías de gasto personalizables.** Ya no hay una lista fija de categorías — puedes crear la que necesites (ej. "Luz", "Internet", "Sticker") directamente al registrar un gasto, igual que se agrega una prenda nueva al catálogo de Inventario.
+- **Plantillas de gastos recurrentes.** Para gastos que se repiten cada mes (Renta, Planilla, Internet...), creas la plantilla una sola vez con su monto, y cada mes solo le das "Confirmar mes" (pudiendo ajustar el monto si cambió) en vez de volver a escribir categoría + monto + fecha desde cero. El sistema te muestra cuáles plantillas siguen sin confirmar en el mes actual.
+- **Editar un gasto ya guardado** — antes solo se podía eliminar y volver a crear.
+
 
