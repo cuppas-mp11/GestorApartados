@@ -403,4 +403,22 @@ Clic en **"Publicar"**.
 - **Plantillas de gastos recurrentes.** Para gastos que se repiten cada mes (Renta, Planilla, Internet...), creas la plantilla una sola vez con su monto, y cada mes solo le das "Confirmar mes" (pudiendo ajustar el monto si cambió) en vez de volver a escribir categoría + monto + fecha desde cero. El sistema te muestra cuáles plantillas siguen sin confirmar en el mes actual.
 - **Editar un gasto ya guardado** — antes solo se podía eliminar y volver a crear.
 
+---
+
+## Paso 13: Pantalla "Ajustes" — reiniciar datos de prueba (✅ no requiere tocar las reglas)
+
+Se agregó una pantalla nueva **"Ajustes"**, visible solo para `admin` en el menú lateral, con un botón para **borrar de un solo paso** la información de movimiento (ventas, apartados, lotes, gastos, pacas, costeos, bitácora de saldo a favor, historial de ediciones, y opcionalmente clientas) — pensado para cuando quieras pasar de una etapa de pruebas a otra, o de pruebas a uso real, sin tener que entrar a la consola de Firebase a borrar a mano.
+
+**No necesitas cambiar nada en las reglas de Firebase para esto.** Las colecciones que ese botón puede borrar (`sales`, `reservations`, `lots`, `creditLedger`, `editLogs`, `customers`, `expenses`, `pacas`, `pacaReconciliations`) ya tienen permiso de lectura/escritura para cualquier usuario autenticado (o, en el caso de las financieras, ya están restringidas a `admin` desde los pasos anteriores) — borrar documentos usa ese mismo permiso, así que las reglas ya publicadas cubren esto.
+
+**Qué SÍ protege siempre, pase lo que pase:** ese botón nunca ofrece como opción borrar `inventory` (tu catálogo de prendas), `roles` (los usuarios), `settings`, `expenseCategories` ni `expenseTemplates` (tu configuración financiera ya armada) — ni por accidente se pueden marcar, porque ni siquiera aparecen en la lista.
+
+**Cómo se usa:**
+1. Entra a **Ajustes** en el menú lateral (solo visible si entraste como admin).
+2. Marca qué quieres borrar (por defecto vienen marcadas todas menos "Clientas", por si ya tienes alguna real que quieras conservar).
+3. Escribe la palabra **BORRAR** en el campo de confirmación.
+4. Te aparece una última ventana de confirmación antes de ejecutar — una vez que aceptas, no se puede deshacer.
+
+Úsalo ahora para limpiar los datos de prueba inicial y subir el mes real que vas a probar, y vuelve a usarlo más adelante cuando ese segundo ensayo termine y quieras arrancar en firme con información completamente limpia.
+
 

@@ -8,6 +8,8 @@ import {
   deleteDoc,
   updateDoc,
   runTransaction,
+  getDocs,
+  writeBatch,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import {
@@ -46,6 +48,7 @@ import { PacaReconciliationPanel } from './components/PacaReconciliationPanel';
 import { ExpensesPanel } from './components/ExpensesPanel';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
 import { ProfitabilitySummary } from './components/ProfitabilitySummary';
+import { DataResetPanel } from './components/DataResetPanel';
 import { SaleForm } from './components/SaleForm';
 import { QuickSaleForm } from './components/QuickSaleForm';
 import { EditSaleModal } from './components/EditSaleModal';
@@ -116,6 +119,7 @@ const App: React.FC = () => {
   const [saleMode, setSaleMode] = useState<'quick' | 'detailed'>('quick');
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [aliases, setAliases] = useState<Record<string, string>>({});
+  const [resetBusy, setResetBusy] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -1121,6 +1125,37 @@ const App: React.FC = () => {
     await setDoc(doc(db, SETTINGS_COLLECTION, FINANCE_SETTINGS_DOC_ID), updated);
   };
 
+  // Borra por completo las colecciones de "movimiento" que el admin elija
+  // (ventas, apartados, lotes, etc.) para arrancar una nueva etapa de pruebas
+  // o pasar a producción. Nunca toca inventario, roles, settings ni las
+  // categorías/plantillas de gasto — esas colecciones ni siquiera se ofrecen
+  // como opción en DataResetPanel.
+  const resetTestData = async (collectionsToWipe: string[]) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede reiniciar los datos.');
+      return;
+    }
+    setResetBusy(true);
+    try {
+      for (const colName of collectionsToWipe) {
+        const snap = await getDocs(collection(db, colName));
+        const docsToDelete = snap.docs;
+        for (let i = 0; i < docsToDelete.length; i += 450) {
+          const chunk = docsToDelete.slice(i, i + 450);
+          const batch = writeBatch(db);
+          chunk.forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+        }
+      }
+      alert('Listo. Se borró la información seleccionada.');
+    } catch (err) {
+      console.error('Error al reiniciar datos:', err);
+      alert('Hubo un error al borrar los datos. Revisa tu conexión e intenta de nuevo.');
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
   const filteredReservations = reservations.filter((res) => {
     if (filter === 'OVERDUE') return res.status === ReservationStatus.PENDING && isOverdue(res.date);
     if (filter === 'PENDING') return res.status === ReservationStatus.PENDING;
@@ -1164,6 +1199,7 @@ const App: React.FC = () => {
     inventario: 'Inventario',
     clientes: 'Clientes',
     finanzas: 'Finanzas',
+    ajustes: 'Ajustes',
   };
 
   return (
@@ -1446,6 +1482,18 @@ const App: React.FC = () => {
                   <FinanceSettingsCard settings={financeSettings} aliases={aliases} onSave={saveFinanceSettings} />
                   <PacasPanel pacas={pacas} aliases={aliases} onRegisterPurchase={registerPacaPurchase} />
                 </div>
+              </div>
+            )
+          )}
+
+          {page === 'ajustes' && (
+            role !== 'admin' ? (
+              <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center">
+                <p className="text-sm font-bold text-slate-400">Esta sección es solo para administradores.</p>
+              </div>
+            ) : (
+              <div className="max-w-xl">
+                <DataResetPanel busy={resetBusy} onReset={resetTestData} />
               </div>
             )
           )}
