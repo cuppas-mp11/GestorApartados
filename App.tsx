@@ -1239,9 +1239,7 @@ const App: React.FC = () => {
           {/* ---------------- PÁGINA: INICIO ---------------- */}
           {page === 'inicio' && (
             <div>
-              <Stats reservations={reservations} />
-
-              <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3 mt-8">Accesos rápidos</h2>
+              <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3">Accesos rápidos</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <button
                   onClick={() => setPage('apartados')}
@@ -1303,6 +1301,10 @@ const App: React.FC = () => {
                   <p className="font-black text-slate-800">Clientes</p>
                   <p className="text-xs text-slate-400 font-bold mt-1">{customers.length} registrado(s)</p>
                 </button>
+              </div>
+
+              <div className="mt-8">
+                <Stats reservations={reservations} />
               </div>
             </div>
           )}

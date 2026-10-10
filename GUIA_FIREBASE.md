@@ -405,13 +405,95 @@ Clic en **"Publicar"**.
 
 ---
 
-## Paso 13: Pantalla "Ajustes" — reiniciar datos de prueba (✅ no requiere tocar las reglas)
+## Paso 13: Pantalla "Ajustes" — reiniciar datos de prueba (⚠️ requiere actualizar las reglas)
 
 Se agregó una pantalla nueva **"Ajustes"**, visible solo para `admin` en el menú lateral, con un botón para **borrar de un solo paso** la información de movimiento (ventas, apartados, lotes, gastos, pacas, costeos, bitácora de saldo a favor, historial de ediciones, y opcionalmente clientas) — pensado para cuando quieras pasar de una etapa de pruebas a otra, o de pruebas a uso real, sin tener que entrar a la consola de Firebase a borrar a mano.
 
-**No necesitas cambiar nada en las reglas de Firebase para esto.** Las colecciones que ese botón puede borrar (`sales`, `reservations`, `lots`, `creditLedger`, `editLogs`, `customers`, `expenses`, `pacas`, `pacaReconciliations`) ya tienen permiso de lectura/escritura para cualquier usuario autenticado (o, en el caso de las financieras, ya están restringidas a `admin` desde los pasos anteriores) — borrar documentos usa ese mismo permiso, así que las reglas ya publicadas cubren esto.
+**Sí hay que actualizar las reglas esta vez.** Cuando armamos el sistema originalmente, dejamos a propósito bloqueado el borrado directo de `reservations`, `sales`, `editLogs` y `creditLedger` (`allow delete: if false`), para que nadie —ni una empleada, ni alguien forzando la base de datos desde fuera— pudiera borrar una venta o un apartado sin pasar por "anular". Ese bloqueo también le gana la partida al botón nuevo, aunque lo use un admin. La solución es permitir el borrado de esas 4 colecciones **únicamente cuando quien lo hace es admin**, sin abrirle la puerta a nadie más.
 
-**Qué SÍ protege siempre, pase lo que pase:** ese botón nunca ofrece como opción borrar `inventory` (tu catálogo de prendas), `roles` (los usuarios), `settings`, `expenseCategories` ni `expenseTemplates` (tu configuración financiera ya armada) — ni por accidente se pueden marcar, porque ni siquiera aparecen en la lista.
+Ve a **Firestore Database → pestaña "Reglas"** y reemplaza TODO el contenido por este bloque (reemplaza también el del Paso 12 — este lo incluye completo, actualizado):
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /roles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /reservations/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null && (
+        request.resource.data.status != 'DELETED' ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /inventory/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /customers/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /lots/{id} {
+      allow read, create: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow update: if request.auth != null;
+    }
+    match /editLogs/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /sales/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /creditLedger/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacas/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacaReconciliations/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseCategories/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseTemplates/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenses/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /settings/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
+```
+
+Clic en **"Publicar"**.
+
+**Lo que cambió respecto a las reglas del Paso 12:** `reservations`, `editLogs`, `sales` y `creditLedger` ahora permiten `delete` cuando quien lo pide es admin (antes era `if false` para absolutamente todos). Una empleada sigue sin poder borrar nada de eso — solo gana ese permiso el admin, y solo lo usa en la práctica el botón de "Ajustes". El resto de las reglas queda exactamente igual.
+
+**Qué SÍ protege siempre, pase lo que pase:** el botón de "Ajustes" nunca ofrece como opción borrar `inventory` (tu catálogo de prendas), `roles` (los usuarios), `settings`, `expenseCategories` ni `expenseTemplates` (tu configuración financiera ya armada) — ni por accidente se pueden marcar, porque ni siquiera aparecen en la lista.
 
 **Cómo se usa:**
 1. Entra a **Ajustes** en el menú lateral (solo visible si entraste como admin).
