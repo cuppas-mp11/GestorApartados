@@ -57,6 +57,7 @@ import { QuickSaleForm } from './components/QuickSaleForm';
 import { EditSaleModal } from './components/EditSaleModal';
 import { SalesHistory } from './components/SalesHistory';
 import { SalesStats } from './components/SalesStats';
+import { TodaySalesHistory } from './components/TodaySalesHistory';
 import { SalesExportMenu } from './components/SalesExportMenu';
 import { Login } from './components/Login';
 import { Sidebar, Page } from './components/Sidebar';
@@ -1396,6 +1397,7 @@ const App: React.FC = () => {
                   <SalesExportMenu sales={sales} aliases={aliases} />
                 </div>
                 <SalesStats sales={sales} />
+                <TodaySalesHistory sales={sales} role={role} onCancelSale={cancelSale} onEditSale={setEditingSale} />
               </div>
             );
 
@@ -1417,7 +1419,7 @@ const App: React.FC = () => {
                 </div>
 
                 {saleMode === 'quick' ? (
-                  <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} sales={sales} role={role} onCancelSale={cancelSale} onEditSale={setEditingSale} lotColorSettings={lotColorSettings} />
+                  <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} lotColorSettings={lotColorSettings} />
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                     <div className="lg:col-span-1 space-y-4">
