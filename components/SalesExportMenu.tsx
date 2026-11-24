@@ -80,7 +80,10 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales, aliases
       startY: 36,
       head: [['Método de pago', 'Total']],
       body: summaryRows.length > 0 ? summaryRows : [['Sin ventas completadas', formatCurrency(0)]],
-      foot: [['TOTAL', formatCurrency(totalDia)]],
+      // El monto de la fila TOTAL se alinea a la derecha con un estilo puesto
+      // directamente en la celda (no solo en columnStyles), porque autoTable
+      // no siempre respeta columnStyles en la fila "foot".
+      foot: [['TOTAL', { content: formatCurrency(totalDia), styles: { halign: 'right' } }]],
       theme: 'grid',
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [43, 178, 151], textColor: 255 },
@@ -113,9 +116,14 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales, aliases
     // Fila de totales, alineada bajo la columna a la que corresponde cada dato.
     // "Precio" y "Vendió" quedan en blanco: son solo informativas, como el precio
     // unitario de cada línea, no tiene sentido sumarlas.
+    // Igual que en la tabla de arriba: el monto del Total se alinea a la
+    // derecha con un estilo puesto directo en la celda, para que autoTable
+    // lo respete también en la fila "foot".
     const footRow = [[
       '', 'TOTAL DEL DÍA', '', `${itemsDia} prenda(s)`, `${completed.length} venta(s)`,
-      discountDia > 0 ? formatCurrency(discountDia) : '—', formatCurrency(totalDia), '',
+      discountDia > 0 ? formatCurrency(discountDia) : '—',
+      { content: formatCurrency(totalDia), styles: { halign: 'right' as const } },
+      '',
     ]];
 
     autoTable(doc, {
