@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { InventoryItem, Lot } from '../types';
-import { generateId, getLotLabelForDate, parseLocalDateInput, formatCurrency, getLocalDateStr } from '../utils';
+import { InventoryItem, Lot, LotColorSettings } from '../types';
+import {
+  generateId, parseLocalDateInput, formatCurrency, getLocalDateStr,
+  buildColorLotLabel, getLotColorForDate,
+} from '../utils';
 
 interface StockEntryFormProps {
   inventory: InventoryItem[];
   onSubmit: (lots: Lot[]) => void;
+  lotColorSettings: LotColorSettings;
 }
 
 interface EntryRow {
@@ -13,13 +17,17 @@ interface EntryRow {
   quantity: number;
 }
 
-export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSubmit }) => {
+export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSubmit, lotColorSettings }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [note, setNote] = useState('');
   const [entryDate, setEntryDate] = useState(getLocalDateStr());
   const [rows, setRows] = useState<EntryRow[]>([{ id: generateId(), code: '', quantity: 1 }]);
 
-  const label = getLotLabelForDate(parseLocalDateInput(entryDate));
+  // Etiqueta nueva estilo "ROSADO 23/10" (color + fecha), según el ciclo
+  // configurado en Lotes por color — reemplaza la vieja etiqueta "ENE03".
+  const entryDateObj = parseLocalDateInput(entryDate);
+  const label = buildColorLotLabel(entryDateObj, lotColorSettings);
+  const color = getLotColorForDate(entryDateObj, lotColorSettings);
 
   const addRow = () => setRows([...rows, { id: generateId(), code: '', quantity: 1 }]);
   const removeRow = (id: string) => rows.length > 1 && setRows(rows.filter((r) => r.id !== id));
@@ -45,6 +53,7 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
         quantityIn: r.quantity,
         quantityRemaining: r.quantity,
         note: note.trim(),
+        color,
       };
     });
 

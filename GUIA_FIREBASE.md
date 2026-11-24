@@ -503,4 +503,105 @@ Clic en **"Publicar"**.
 
 Úsalo ahora para limpiar los datos de prueba inicial y subir el mes real que vas a probar, y vuelve a usarlo más adelante cuando ese segundo ensayo termine y quieras arrancar en firme con información completamente limpia.
 
+---
+
+## Paso 14: Lotes por color (ciclo de 6 colores, rebajas automáticas) — ⚠️ requiere actualizar las reglas
+
+Esta actualización conecta el sistema de "lotes por color" (el que armaste junto con la administradora, con el Excel `descuentos_tienda_final.xlsx`) con el resto del sistema:
+
+- **Al registrar una entrega de mercadería**, el lote ya no se etiqueta como "ENE03" — se le asigna el color que le toca según el ciclo (ej. "ROSADO 23/10"), siguiendo exactamente tu calendario: color = lista[(semana−1) mod 6], semana 1 = la fecha que configures como "primer lote".
+- **En Ventas, el precio se calcula solo.** Cuando una prenda ya está en "Precio rebajado" o "Última oportunidad" (según cuántos días lleva en tienda su lote más antiguo con stock), el sistema cobra ese precio automáticamente — ni tú ni la vendedora tienen que ir a ver la tarjeta de precios físicta. El cálculo (redondeo a Q5, piso de Q35, las excepciones de Q35/Q40) ya se verificó contra tu tarjeta de precios completa (de Q35 a Q200) y coincide en los 20 casos.
+- **En Lotes, cada grupo muestra su etapa** ("Precio normal", "Precio rebajado (-15%)", "Última oportunidad (-30%)", o "Sacar de los estantes" al día 42) como una etiqueta de color, además de la alerta de rotación que ya existía.
+- **Pantalla de configuración** ("Lotes por color", dentro de Inventario, solo para admin): ahí editas la fecha del primer lote, el ciclo de colores (6 en uso + 2 de reserva para el futuro), los días de cada etapa, los porcentajes, el redondeo, el piso de precio, el precio mayorista, y las excepciones de precio (Q35 y Q40).
+- El día 42 ("sacar de los estantes") solo se muestra como aviso — tú decides a mano qué hacer con lo que sobra (mayorista, liquidación o donación); el sistema no hace nada automático con esos lotes.
+
+**Sí hay que actualizar las reglas**, porque se agregó una colección nueva: `lotColorSettings`. A diferencia de `settings` (finanzas, solo admin), esta la necesita **leer cualquier usuaria autenticada** — la vendedora también tiene que recibir el precio con descuento correcto al vender — pero solo un admin puede cambiarla.
+
+Ve a **Firestore Database → pestaña "Reglas"** y reemplaza TODO el contenido por este bloque (incluye todo lo de los Pasos 7 a 14 actualizado):
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /roles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /reservations/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null && (
+        request.resource.data.status != 'DELETED' ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /inventory/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /customers/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /lots/{id} {
+      allow read, create: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow update: if request.auth != null;
+    }
+    match /editLogs/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /sales/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /creditLedger/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacas/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacaReconciliations/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseCategories/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseTemplates/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenses/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /settings/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /lotColorSettings/{id} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
+```
+
+Clic en **"Publicar"**.
+
+**Antes de usarlo:** entra a **Inventario → Lotes por color → Editar** y confirma que la fecha del primer lote sea la correcta (el sistema trae 23/10/2026 por defecto, según tu documento — ajústala si al final usaron el 22/10 u otra fecha) y que los 6 colores estén en el orden correcto (ROSADO, ROJO, AMARILLO, PLATEADO, VERDE, AZUL). Los lotes que ya tienes registrados de antes de esta actualización no tienen color asignado — seguirán vendiéndose a precio normal (sin rebaja automática) hasta que registres de nuevo su entrega, o si prefieres, puedes borrarlos y volver a registrarlos con la fecha correcta para que les asigne el color que les toca.
+
 

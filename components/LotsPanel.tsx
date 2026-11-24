@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { InventoryItem, Lot, UserRole } from '../types';
-import { getWeeksInStore, getLotAlertLevel, formatDate, getDisplayName } from '../utils';
+import { InventoryItem, Lot, UserRole, LotColorSettings } from '../types';
+import { getWeeksInStore, getLotAlertLevel, formatDate, getDisplayName, getLotStage, getStageInfo } from '../utils';
 
 interface LotsPanelProps {
   inventory: InventoryItem[];
@@ -10,6 +10,7 @@ interface LotsPanelProps {
   onVerifyLot: (id: string, status: 'confirmed' | 'flagged' | 'pending', note?: string) => void;
   onCorrectQuantity: (id: string, newQuantityIn: number, newQuantityRemaining: number) => void;
   aliases: Record<string, string>;
+  lotColorSettings: LotColorSettings;
 }
 
 const cardStyles = {
@@ -28,9 +29,17 @@ interface LabelGroup {
   weeks: number;
   hasFlagged: boolean;
   pendingCount: number;
+  color?: string;
 }
 
-export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onDeleteLot, onVerifyLot, onCorrectQuantity, aliases }) => {
+const stageBadgeStyles: Record<string, string> = {
+  green: 'bg-[#2bb297]/10 text-[#1a8a72] border-[#2bb297]/30',
+  amber: 'bg-[#c9a876]/15 text-[#8a6a3f] border-[#c9a876]/40',
+  red: 'bg-[#8c3a4b]/10 text-[#8c3a4b] border-[#8c3a4b]/30',
+  slate: 'bg-slate-100 text-slate-500 border-slate-300',
+};
+
+export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onDeleteLot, onVerifyLot, onCorrectQuantity, aliases, lotColorSettings }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'TIMELINE_ASC' | 'TIMELINE_DESC' | 'MONTH' | 'YEAR'>('TIMELINE_ASC');
@@ -63,6 +72,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
           weeks: getWeeksInStore(lot.entryDate),
           hasFlagged: lot.verificationStatus === 'flagged',
           pendingCount: isPending ? 1 : 0,
+          color: lot.color,
         });
       }
     }
@@ -187,6 +197,15 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-white/70">{rotationAlert.label}</span>
+                      {lot.color && (() => {
+                        const stage = getLotStage(lot.entryDate, lotColorSettings);
+                        const info = getStageInfo(stage);
+                        return (
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${stageBadgeStyles[info.level]}`}>
+                            {info.label}
+                          </span>
+                        );
+                      })()}
                       {role === 'admin' && (
                         <button
                           onClick={() => { if (confirm('¿Eliminar este lote?')) onDeleteLot(lot.id); }}
@@ -415,6 +434,15 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                       </div>
                       <p className="text-[10px] font-bold mt-2">{formatDate(g.entryDate)}</p>
                       <p className="text-[9px] font-black uppercase mt-1">{rotationAlert.label} · {g.weeks} sem.</p>
+                      {g.color && (() => {
+                        const stage = getLotStage(g.entryDate, lotColorSettings);
+                        const info = getStageInfo(stage);
+                        return (
+                          <span className={`inline-block mt-1.5 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${stageBadgeStyles[info.level]}`}>
+                            {info.label}
+                          </span>
+                        );
+                      })()}
                     </button>
                   </React.Fragment>
                 );

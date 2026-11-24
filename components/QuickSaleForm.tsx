@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, SaleStatus, UserRole } from '../types';
-import { generateId, formatCurrency, getStockForCode, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getPaymentsTotal, amountsMatch, PAYMENT_METHODS, getDailySequenceMap, getLocalDateStr, isSameLocalDay } from '../utils';
+import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, SaleStatus, UserRole, LotColorSettings } from '../types';
+import { generateId, formatCurrency, getStockForCode, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getPaymentsTotal, amountsMatch, PAYMENT_METHODS, getDailySequenceMap, getLocalDateStr, isSameLocalDay, getEffectivePriceForCode, getStageInfo, getCandidateLotsForCode, getLotStage } from '../utils';
 import { CreditCustomerPicker } from './CreditCustomerPicker';
 
 type SaleDraft = Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>;
@@ -14,6 +14,7 @@ interface QuickSaleFormProps {
   role: UserRole | null;
   onCancelSale: (id: string) => void;
   onEditSale: (sale: Sale) => void;
+  lotColorSettings: LotColorSettings;
 }
 
 const QUICK_METHODS: { value: PaymentMethod; short: string }[] = [
@@ -32,7 +33,7 @@ const emptyDraft = () => ({
   note: '',
 });
 
-export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, lots, customers, sales, role, onCancelSale, onEditSale }) => {
+export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, lots, customers, sales, role, onCancelSale, onEditSale, lotColorSettings }) => {
   const [draft, setDraft] = useState(emptyDraft());
   const [showBalancePicker, setShowBalancePicker] = useState(false);
   const [combinedMode, setCombinedMode] = useState(false);
@@ -71,7 +72,11 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
       setDraft(emptyDraft());
       return;
     }
-    setDraft({ ...emptyDraft(), garmentId, code: inv.code, name: inv.name, pricePerUnit: inv.basePrice, quantity: 1 });
+    // Precio automático: si la prenda más antigua en stock de este código ya
+    // está en descuento (lote por color), se cobra ese precio rebajado de
+    // una vez — la vendedora puede ajustarlo a mano si hace falta.
+    const effectivePrice = getEffectivePriceForCode(inv.code, lots, inv.basePrice, lotColorSettings);
+    setDraft({ ...emptyDraft(), garmentId, code: inv.code, name: inv.name, pricePerUnit: effectivePrice, quantity: 1 });
   };
 
   const resetPaymentUi = () => {
@@ -185,9 +190,17 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
               <option value="">-- Seleccionar --</option>
               {inventory.map((inv) => {
                 const invStock = getStockForCode(inv.code, lots);
+                const effectivePrice = getEffectivePriceForCode(inv.code, lots, inv.basePrice, lotColorSettings);
+                const oldestLot = getCandidateLotsForCode(inv.code, lots).find((l) => l.quantityRemaining > 0);
+                const stageLabel = oldestLot?.color
+                  ? getStageInfo(getLotStage(oldestLot.entryDate, lotColorSettings)).label
+                  : null;
+                const priceLabel = effectivePrice !== inv.basePrice
+                  ? `${formatCurrency(inv.basePrice)} → ${formatCurrency(effectivePrice)}${stageLabel ? ` (${stageLabel})` : ''}`
+                  : formatCurrency(inv.basePrice);
                 return (
                   <option key={inv.id} value={inv.id} disabled={invStock <= 0}>
-                    {inv.code} - {inv.name} ({formatCurrency(inv.basePrice)}) {invStock <= 0 ? '· Sin stock' : `· Stock: ${invStock}`}
+                    {inv.code} - {inv.name} ({priceLabel}) {invStock <= 0 ? '· Sin stock' : `· Stock: ${invStock}`}
                   </option>
                 );
               })}

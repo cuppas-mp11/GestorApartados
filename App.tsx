@@ -33,6 +33,7 @@ import {
   ExpenseFrequency,
   ExpenseTemplate,
   FinanceSettings,
+  LotColorSettings,
 } from './types';
 import { ReservationForm } from './components/ReservationForm';
 import { ReservationTable } from './components/ReservationTable';
@@ -49,6 +50,7 @@ import { ExpensesPanel } from './components/ExpensesPanel';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
 import { ProfitabilitySummary } from './components/ProfitabilitySummary';
 import { DataResetPanel } from './components/DataResetPanel';
+import { LotColorSettingsCard } from './components/LotColorSettingsCard';
 import { SaleForm } from './components/SaleForm';
 import { QuickSaleForm } from './components/QuickSaleForm';
 import { EditSaleModal } from './components/EditSaleModal';
@@ -71,6 +73,7 @@ import {
   isSameLocalDay,
   getNextPacaCode,
   findMatchingPaca,
+  DEFAULT_LOT_COLOR_SETTINGS,
 } from './utils';
 
 const RESERVATIONS_COLLECTION = 'reservations';
@@ -79,6 +82,8 @@ const CUSTOMERS_COLLECTION = 'customers';
 const LOTS_COLLECTION = 'lots';
 const SALES_COLLECTION = 'sales';
 const CREDIT_LEDGER_COLLECTION = 'creditLedger';
+const LOT_COLOR_SETTINGS_COLLECTION = 'lotColorSettings';
+const LOT_COLOR_SETTINGS_DOC_ID = 'config';
 const PACAS_COLLECTION = 'pacas';
 const PACA_RECONCILIATIONS_COLLECTION = 'pacaReconciliations';
 const EXPENSE_CATEGORIES_COLLECTION = 'expenseCategories';
@@ -103,6 +108,7 @@ const App: React.FC = () => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [lots, setLots] = useState<Lot[]>([]);
+  const [lotColorSettings, setLotColorSettings] = useState<LotColorSettings>(DEFAULT_LOT_COLOR_SETTINGS);
   const [sales, setSales] = useState<Sale[]>([]);
   const [creditLedger, setCreditLedger] = useState<CreditTransaction[]>([]);
   const [pacas, setPacas] = useState<Paca[]>([]);
@@ -238,6 +244,15 @@ const App: React.FC = () => {
       (error) => console.error('Error leyendo saldos:', error)
     );
 
+    // Configuración de colores de lotes: cualquier usuario autenticado la lee
+    // (la vendedora la necesita para saber a qué precio vender), pero solo un
+    // admin puede cambiarla (ver GUIA_FIREBASE.md).
+    const unsubLotColorSettings = onSnapshot(
+      doc(db, LOT_COLOR_SETTINGS_COLLECTION, LOT_COLOR_SETTINGS_DOC_ID),
+      (snap) => setLotColorSettings(snap.exists() ? (snap.data() as LotColorSettings) : DEFAULT_LOT_COLOR_SETTINGS),
+      (error) => console.error('Error leyendo configuración de colores de lotes:', error)
+    );
+
     return () => {
       unsubReservations();
       unsubInventory();
@@ -245,6 +260,7 @@ const App: React.FC = () => {
       unsubLots();
       unsubSales();
       unsubCreditLedger();
+      unsubLotColorSettings();
     };
   }, [user]);
 
@@ -1125,6 +1141,19 @@ const App: React.FC = () => {
     await setDoc(doc(db, SETTINGS_COLLECTION, FINANCE_SETTINGS_DOC_ID), updated);
   };
 
+  const saveLotColorSettings = async (updates: Omit<LotColorSettings, 'updatedByEmail' | 'updatedAt'>) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede cambiar esta configuración.');
+      return;
+    }
+    const updated: LotColorSettings = {
+      ...updates,
+      updatedByEmail: user?.email || 'desconocido',
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, LOT_COLOR_SETTINGS_COLLECTION, LOT_COLOR_SETTINGS_DOC_ID), updated);
+  };
+
   // Borra por completo las colecciones de "movimiento" que el admin elija
   // (ventas, apartados, lotes, etc.) para arrancar una nueva etapa de pruebas
   // o pasar a producción. Nunca toca inventario, roles, settings ni las
@@ -1378,11 +1407,11 @@ const App: React.FC = () => {
               </div>
 
               {saleMode === 'quick' ? (
-                <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} sales={sales} role={role} onCancelSale={cancelSale} onEditSale={setEditingSale} />
+                <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} sales={sales} role={role} onCancelSale={cancelSale} onEditSale={setEditingSale} lotColorSettings={lotColorSettings} />
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                   <div className="lg:col-span-1 space-y-4">
-                    <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} />
+                    <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} lotColorSettings={lotColorSettings} />
                   </div>
                   <div className="lg:col-span-3">
                     <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
@@ -1408,7 +1437,7 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
               <InventoryManager items={inventory} lots={lots} reservations={reservations} onUpdate={handleInventoryUpdate} />
               {role === 'admin' && (
-                <StockEntryForm inventory={inventory} onSubmit={addStockEntry} />
+                <StockEntryForm inventory={inventory} onSubmit={addStockEntry} lotColorSettings={lotColorSettings} />
               )}
               <LotsPanel
                 inventory={inventory}
@@ -1418,7 +1447,11 @@ const App: React.FC = () => {
                 onVerifyLot={verifyLot}
                 onCorrectQuantity={correctLotQuantity}
                 aliases={aliases}
+                lotColorSettings={lotColorSettings}
               />
+              {role === 'admin' && (
+                <LotColorSettingsCard settings={lotColorSettings} aliases={aliases} onSave={saveLotColorSettings} />
+              )}
             </div>
           )}
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod } from '../types';
-import { generateId, formatCurrency, getStockForCode, PAYMENT_METHODS, getSaleItemTotal, getPaymentsTotal, amountsMatch } from '../utils';
+import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, LotColorSettings } from '../types';
+import { generateId, formatCurrency, getStockForCode, PAYMENT_METHODS, getSaleItemTotal, getPaymentsTotal, amountsMatch, getEffectivePriceForCode, getStageInfo, getCandidateLotsForCode, getLotStage } from '../utils';
 import { CreditCustomerPicker } from './CreditCustomerPicker';
 
 type SaleDraft = Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>;
@@ -11,9 +11,10 @@ interface SaleFormProps {
   lots: Lot[];
   nextCorrelative: number;
   customers: Customer[];
+  lotColorSettings: LotColorSettings;
 }
 
-export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, nextCorrelative, customers }) => {
+export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, nextCorrelative, customers, lotColorSettings }) => {
   const [items, setItems] = useState<SaleItem[]>([
     { id: generateId(), garmentId: '', name: '', code: '', quantity: 1, pricePerUnit: 0, discount: 0 }
   ]);
@@ -58,7 +59,9 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
         if (inv) {
           updated.name = inv.name;
           updated.code = inv.code;
-          updated.pricePerUnit = inv.basePrice;
+          // Precio automático: aplica el descuento del lote más antiguo con
+          // stock de este código, si ya está en alguna etapa de rebaja.
+          updated.pricePerUnit = getEffectivePriceForCode(inv.code, lots, inv.basePrice, lotColorSettings);
           const stock = availableStock(inv.code, item.id);
           updated.quantity = Math.max(1, Math.min(updated.quantity || 1, Math.max(1, stock)));
           updated.discount = 0;
@@ -219,9 +222,17 @@ export const SaleForm: React.FC<SaleFormProps> = ({ onAdd, inventory, lots, next
                           {inventory.map((inv) => {
                             const invStock = availableStock(inv.code, item.id);
                             const outOfStock = invStock <= 0 && inv.id !== item.garmentId;
+                            const effectivePrice = getEffectivePriceForCode(inv.code, lots, inv.basePrice, lotColorSettings);
+                            const oldestLot = getCandidateLotsForCode(inv.code, lots).find((l) => l.quantityRemaining > 0);
+                            const stageLabel = oldestLot?.color
+                              ? getStageInfo(getLotStage(oldestLot.entryDate, lotColorSettings)).label
+                              : null;
+                            const priceLabel = effectivePrice !== inv.basePrice
+                              ? `${formatCurrency(inv.basePrice)} → ${formatCurrency(effectivePrice)}${stageLabel ? ` (${stageLabel})` : ''}`
+                              : formatCurrency(inv.basePrice);
                             return (
                               <option key={inv.id} value={inv.id} disabled={outOfStock}>
-                                {inv.code} - {inv.name} ({formatCurrency(inv.basePrice)}) {outOfStock ? '· Sin stock' : `· Stock: ${invStock}`}
+                                {inv.code} - {inv.name} ({priceLabel}) {outOfStock ? '· Sin stock' : `· Stock: ${invStock}`}
                               </option>
                             );
                           })}

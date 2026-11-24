@@ -1,7 +1,7 @@
 import {
   Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
   Paca, PacaReconciliation, Expense, ExpenseCategoryItem, ExpenseTemplate,
-  UnitCostItem, FinanceSettings,
+  UnitCostItem, FinanceSettings, LotColorSettings, LotStage, InventoryItem,
 } from './types';
 
 // Plazo de vencimiento centralizado (antes estaba repetido en 3 archivos distintos)
@@ -97,6 +97,121 @@ export const getLotAlertLevel = (weeks: number): { level: 'green' | 'amber' | 'r
   if (weeks >= 8) return { level: 'red', label: 'Rebajar ya' };
   if (weeks >= 5) return { level: 'amber', label: 'Vigilar' };
   return { level: 'green', label: 'Reciente' };
+};
+
+// ---- Sistema de lotes por color ----
+
+export const DEFAULT_LOT_COLOR_SETTINGS: LotColorSettings = {
+  // Semana 1 = 23/10/2026 (primer lote con este sistema de colores).
+  firstLotDate: '2026-10-23',
+  // 6 colores en uso + 2 espacios de reserva vacíos (por si el plazo se alarga
+  // a 7 u 8 semanas en el futuro) — getActiveLotColors() ignora los vacíos.
+  colors: ['ROSADO', 'ROJO', 'AMARILLO', 'PLATEADO', 'VERDE', 'AZUL', '', ''],
+  daysToFirstDiscount: 21,
+  daysToFinalDiscount: 35,
+  daysToPullout: 42,
+  firstDiscountPercent: 0.15,
+  finalDiscountPercent: 0.30,
+  roundTo: 5,
+  priceFloor: 35,
+  manualExceptions: [
+    { normalPrice: 35, firstDiscountPrice: 30, finalDiscountPrice: 30 },
+    { normalPrice: 40, firstDiscountPrice: 35, finalDiscountPrice: 30 },
+  ],
+  wholesalePrice: 25,
+};
+
+// Colores "en uso" (ignora espacios de reserva vacíos para colores 7-8).
+export const getActiveLotColors = (settings: LotColorSettings): string[] =>
+  (settings.colors || []).map((c) => (c || '').trim()).filter(Boolean);
+
+// Color que le toca a un lote según su fecha de entrada: cada bloque de 7 días
+// desde `firstLotDate` avanza una posición en el ciclo de colores.
+export const getLotColorForDate = (entryDate: Date, settings: LotColorSettings): string => {
+  const colors = getActiveLotColors(settings);
+  if (colors.length === 0) return '';
+  const first = parseLocalDateInput(settings.firstLotDate);
+  first.setHours(0, 0, 0, 0);
+  const entry = new Date(entryDate);
+  entry.setHours(0, 0, 0, 0);
+  const days = Math.floor((entry.getTime() - first.getTime()) / (1000 * 60 * 60 * 24));
+  const weekIndex = Math.floor(days / 7);
+  const idx = ((weekIndex % colors.length) + colors.length) % colors.length;
+  return colors[idx];
+};
+
+// Código de etiqueta tipo "dd/mm" (el que va escrito en la prenda, junto al color).
+export const formatLotColorCode = (entryDateISO: string): string => {
+  const d = new Date(entryDateISO);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// Etiqueta completa de un lote nuevo: "ROSADO 23/10".
+export const buildColorLotLabel = (entryDate: Date, settings: LotColorSettings): string => {
+  const color = getLotColorForDate(entryDate, settings);
+  const code = formatLotColorCode(entryDate.toISOString());
+  return color ? `${color} ${code}` : code;
+};
+
+// En qué etapa de precio está un lote hoy, según cuántos días lleva en tienda.
+export const getLotStage = (entryDateISO: string, settings: LotColorSettings): LotStage => {
+  const days = calculateDaysPassed(entryDateISO);
+  if (days >= settings.daysToPullout) return 'pullout';
+  if (days >= settings.daysToFinalDiscount) return 'final_discount';
+  if (days >= settings.daysToFirstDiscount) return 'first_discount';
+  return 'normal';
+};
+
+export const getStageInfo = (stage: LotStage): { label: string; level: 'green' | 'amber' | 'red' | 'slate' } => {
+  switch (stage) {
+    case 'first_discount': return { label: 'Precio rebajado (-15%)', level: 'amber' };
+    case 'final_discount': return { label: 'Última oportunidad (-30%)', level: 'red' };
+    case 'pullout': return { label: 'Sacar de los estantes', level: 'slate' };
+    default: return { label: 'Precio normal', level: 'green' };
+  }
+};
+
+// Redondea al múltiplo de `roundTo` más cercano (ej. a Q5), nunca hacia arriba
+// de forma que termine arriba del precio sin redondear.
+const roundToMultiple = (value: number, roundTo: number): number => {
+  if (!roundTo || roundTo <= 0) return Math.round(value);
+  return Math.round(value / roundTo) * roundTo;
+};
+
+// Precio de una prenda en una etapa dada, a partir de su precio normal.
+// 1) Si el precio normal tiene una excepción manual, se usa esa (tal cual).
+// 2) Si no, se calcula el % de descuento, se redondea al múltiplo configurado,
+//    y nunca baja del piso de precio.
+export const getDiscountedPrice = (normalPrice: number, stage: LotStage, settings: LotColorSettings): number => {
+  if (stage === 'normal' || stage === 'pullout') return normalPrice;
+
+  const exception = (settings.manualExceptions || []).find((e) => amountsMatch(e.normalPrice, normalPrice));
+  if (exception) {
+    return stage === 'first_discount' ? exception.firstDiscountPrice : exception.finalDiscountPrice;
+  }
+
+  const percent = stage === 'first_discount' ? settings.firstDiscountPercent : settings.finalDiscountPercent;
+  const raw = normalPrice * (1 - percent);
+  const rounded = roundToMultiple(raw, settings.roundTo || 5);
+  return Math.max(settings.priceFloor || 0, rounded);
+};
+
+// Precio sugerido para vender un código HOY: toma el lote más antiguo que
+// todavía tenga stock (el que se va a descontar primero, por FIFO) y calcula
+// el precio según su etapa. Si ese lote no tiene color asignado (lote de
+// antes de este sistema) o no hay stock registrado, usa el precio normal del
+// catálogo tal cual, sin descuento.
+export const getEffectivePriceForCode = (
+  code: string,
+  lots: Lot[],
+  normalPrice: number,
+  settings: LotColorSettings
+): number => {
+  const candidates = getCandidateLotsForCode(code, lots).filter((l) => l.quantityRemaining > 0);
+  const oldest = candidates[0];
+  if (!oldest || !oldest.color) return normalPrice;
+  const stage = getLotStage(oldest.entryDate, settings);
+  return getDiscountedPrice(normalPrice, stage, settings);
 };
 
 export const getNextCustomerCode = (customers: { code: string }[]): string => {

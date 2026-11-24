@@ -52,16 +52,59 @@ export interface InventoryItem {
 export interface Lot {
   id: string;
   code: string;
-  label: string; // ej. "ENE03"
+  label: string; // ej. "ENE03" (lotes viejos) o "ROSADO 23/10" (sistema de colores)
   entryDate: string; // ISO string
   quantityIn: number;
   quantityRemaining: number;
   note?: string;
+  // Sistema de lotes por color (ver LotColorSettings más abajo): color asignado
+  // en el momento de registrar la entrega, según el ciclo configurado. Se
+  // guarda aquí (no se recalcula después) para que el historial nunca cambie
+  // aunque más adelante se edite el orden de colores. Los lotes de antes de
+  // este sistema no lo tienen (quedan sin color, como "normal" para precios).
+  color?: string;
   // Verificación cruzada: la vendedora confirma o reporta un problema con lo que llegó
   verificationStatus?: 'confirmed' | 'flagged'; // sin definir = pendiente de revisar
   verificationNote?: string; // razón cuando se marca "flagged"
   verifiedByEmail?: string;
   verifiedAt?: string;
+}
+
+// ---- Sistema de lotes por color (reemplaza la alerta verde/ámbar/rojo) ----
+//
+// Cada "día de cambios" (normalmente el viernes) entra un lote nuevo con un
+// color fijo que se repite en ciclo (ROSADO, ROJO, AMARILLO...). El precio de
+// cada prenda baja solo según cuántos días lleva en tienda ese lote: precio
+// normal → primer descuento → descuento final → se saca de los estantes
+// (liquidación/mayorista). Todo esto es editable desde "Ajustes de colores"
+// (solo admin); las empleadas solo lo ven, no lo editan.
+export type LotStage = 'normal' | 'first_discount' | 'final_discount' | 'pullout';
+
+// Excepción manual a la fórmula de redondeo/piso (ej. Q35 normal baja a
+// Q30/Q30 en vez del redondeo "de libro"), para los casos donde el cálculo
+// automático no da el número exacto que se quiere usar en la tienda.
+export interface ManualPriceException {
+  normalPrice: number;
+  firstDiscountPrice: number;
+  finalDiscountPrice: number;
+}
+
+export interface LotColorSettings {
+  firstLotDate: string; // YYYY-MM-DD — fecha del primer lote con color (ancla el ciclo)
+  colors: string[]; // orden del ciclo, ej. ['ROSADO','ROJO','AMARILLO','PLATEADO','VERDE','AZUL']
+  daysToFirstDiscount: number; // días en tienda para bajar al primer descuento (ej. 21)
+  daysToFinalDiscount: number; // días en tienda para el descuento final (ej. 35)
+  daysToPullout: number; // días en tienda para sacarlo de los estantes (ej. 42)
+  firstDiscountPercent: number; // ej. 0.15
+  finalDiscountPercent: number; // ej. 0.30
+  roundTo: number; // redondear precios con descuento a múltiplos de esto (ej. 5)
+  priceFloor: number; // ningún precio con descuento baja de aquí (ej. 35)
+  manualExceptions: ManualPriceException[];
+  // Precio plano (por prenda) al liquidar/vender por mayorista lo que sobra al
+  // llegar a daysToPullout — no depende del precio normal de cada prenda.
+  wholesalePrice: number;
+  updatedByEmail?: string;
+  updatedAt?: string;
 }
 
 export interface ReservationItem {
@@ -170,6 +213,10 @@ export interface Sale {
   cancelReason?: string;
   // true si se registró desde el modo rápido "Venta del día" (por grupos)
   quickEntry?: boolean;
+  // 'wholesale' = liquidación de un lote que llegó a su día de "sacar de los
+  // estantes" (sistema de lotes por color), vendido en bloque a precio de
+  // mayorista. Sin este campo (o 'retail') es una venta normal de mostrador.
+  saleKind?: 'retail' | 'wholesale';
   // Rastro de corrección (solo admin puede editar una venta ya guardada)
   editedAt?: string;
   editedByEmail?: string;
