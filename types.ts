@@ -179,8 +179,13 @@ export interface SaleItem {
   code: string;
   quantity: number;
   pricePerUnit: number;
-  // Descuento en Quetzales aplicado a esta línea completa (ej. por desperfecto).
+  // Descuento en Quetzales aplicado a esta línea completa (ej. por desperfecto,
+  // y/o el descuento automático del lote si se eligió uno — ver lotId).
   discount: number;
+  // De qué lote/etiqueta específico es la prenda, cuando se eligió a mano
+  // (Venta Nueva). Si no viene, el stock se descuenta por FIFO como antes
+  // (ventas viejas y la venta detallada, que no pide elegir lote).
+  lotId?: string;
 }
 
 // Fase 2.5: una venta puede pagarse combinando varios métodos

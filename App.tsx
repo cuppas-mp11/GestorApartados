@@ -652,8 +652,21 @@ const App: React.FC = () => {
   const addSale = async (
     saleDraft: Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>
   ) => {
-    const needs = saleDraft.items.map((it) => ({ code: it.code, quantity: it.quantity }));
-    const aggregated = aggregateStockNeeds(needs);
+    // Prendas con lote elegido a mano (Venta Nueva) se descuentan de ESE lote
+    // exacto; las que no traen lote (venta detallada, o datos viejos) siguen
+    // el FIFO de siempre (el lote más antiguo con stock primero).
+    const directNeeds = new Map<string, { code: string; quantity: number }>();
+    const fifoNeedsRaw: { code: string; quantity: number }[] = [];
+    for (const it of saleDraft.items) {
+      if (it.lotId) {
+        const cur = directNeeds.get(it.lotId) || { code: it.code, quantity: 0 };
+        cur.quantity += it.quantity;
+        directNeeds.set(it.lotId, cur);
+      } else {
+        fifoNeedsRaw.push({ code: it.code, quantity: it.quantity });
+      }
+    }
+    const aggregated = aggregateStockNeeds(fifoNeedsRaw);
     const balancePayment = saleDraft.payments.find((p) => p.method === 'balance');
 
     const saleId = generateId();
@@ -665,8 +678,27 @@ const App: React.FC = () => {
       const stockUpdates: { ref: ReturnType<typeof doc>; newRemaining: number }[] = [];
       const stockAllocations: StockAllocation[] = [];
 
+      // 1a. Lotes elegidos a mano: se descuentan exactamente de ahí.
+      for (const [lotId, need] of directNeeds) {
+        const ref = doc(db, LOTS_COLLECTION, lotId);
+        const snap = await transaction.get(ref);
+        if (!snap.exists()) {
+          const item = inventory.find((i) => i.code === need.code);
+          throw new Error(`El lote elegido para "${item?.name || need.code}" ya no existe. Vuelve a intentar la venta.`);
+        }
+        const fresh = snap.data() as Lot;
+        if (fresh.quantityRemaining < need.quantity) {
+          const item = inventory.find((i) => i.code === need.code);
+          throw new Error(`El lote elegido para "${item?.name || need.code}" ya no tiene suficiente stock. Vuelve a intentar la venta eligiendo otro lote.`);
+        }
+        stockUpdates.push({ ref, newRemaining: fresh.quantityRemaining - need.quantity });
+        stockAllocations.push({ lotId, code: need.code, quantity: need.quantity });
+      }
+
+      // 1b. Sin lote elegido (venta detallada / datos viejos): FIFO de siempre,
+      // sin tocar los lotes que ya se asignaron directo arriba.
       for (const need of aggregated) {
-        const candidates = getCandidateLotsForCode(need.code, lots);
+        const candidates = getCandidateLotsForCode(need.code, lots).filter((l) => !directNeeds.has(l.id));
         let remaining = need.quantity;
         for (const lot of candidates) {
           if (remaining <= 0) break;

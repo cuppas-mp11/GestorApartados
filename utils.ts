@@ -222,6 +222,20 @@ export const getEffectivePriceForCode = (
   return getDiscountedPrice(normalPrice, stage, settings);
 };
 
+// Precio de UN lote específico (cuando la vendedora elige a mano de qué
+// lote/etiqueta es la prenda, en vez de que el sistema adivine el más
+// antiguo). Si el lote no tiene color asignado (de antes de este sistema),
+// se vende a precio normal, sin descuento.
+export const getEffectivePriceForLot = (
+  lot: Lot,
+  normalPrice: number,
+  settings: LotColorSettings
+): number => {
+  if (!lot.color) return normalPrice;
+  const stage = getLotStage(lot.entryDate, settings);
+  return getDiscountedPrice(normalPrice, stage, settings);
+};
+
 export const getNextCustomerCode = (customers: { code: string }[]): string => {
   const nums = customers.map((c) => parseInt((c.code || '').substring(1)) || 0);
   const last = nums.length > 0 ? Math.max(...nums) : 0;

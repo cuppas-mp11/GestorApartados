@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, LotColorSettings } from '../types';
-import { generateId, formatCurrency, getStockForCode, paymentMethodLabel, amountsMatch, PAYMENT_METHODS, getEffectivePriceForCode, getStageInfo, getCandidateLotsForCode, getLotStage } from '../utils';
+import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, LotColorSettings, LotStage } from '../types';
+import { generateId, formatCurrency, getStockForCode, paymentMethodLabel, amountsMatch, PAYMENT_METHODS, getCandidateLotsForCode, getEffectivePriceForLot, getLotStage, getStageInfo } from '../utils';
 import { CreditCustomerPicker } from './CreditCustomerPicker';
 
 type SaleDraft = Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>;
@@ -24,12 +24,33 @@ interface QuickRow {
   garmentId: string;
   code: string;
   name: string;
-  pricePerUnit: number;
+  basePrice: number;
   quantity: number;
-  discount: number;
+  // De qué lote/etiqueta física es la prenda. Si el código solo tiene un lote
+  // con stock, se auto-selecciona solo; si tiene varios, la vendedora debe
+  // elegirlo a mano viendo la etiqueta del lote físico.
+  lotId: string;
+  // Descuento adicional manual (ej. por desperfecto), aparte del descuento
+  // automático que ya trae el lote elegido según su etapa de rebaja.
+  extraDiscount: number;
 }
 
-const emptyRow = (): QuickRow => ({ id: generateId(), garmentId: '', code: '', name: '', pricePerUnit: 0, quantity: 1, discount: 0 });
+const emptyRow = (): QuickRow => ({ id: generateId(), garmentId: '', code: '', name: '', basePrice: 0, quantity: 1, lotId: '', extraDiscount: 0 });
+
+interface RowComputed {
+  lotsForRow: Lot[];
+  needsLotChoice: boolean;
+  selectedLot: Lot | null;
+  available: number;
+  effectivePrice: number;
+  lotDiscountTotal: number;
+  totalDiscount: number;
+  subtotal: number;
+  lineTotal: number;
+  stage: LotStage | null;
+  stageInfo: { label: string; level: 'green' | 'amber' | 'red' | 'slate' } | null;
+  ready: boolean;
+}
 
 export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, lots, customers, lotColorSettings }) => {
   // La ventana de "Venta Nueva" se abre bajo demanda — así la vendedora ve
@@ -55,47 +76,36 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
 
   const isInventoryEmpty = inventory.length === 0;
 
-  // Stock disponible de un código, descontando lo que ya ocuparon las otras
-  // filas de esta misma venta (para no vender dos veces el mismo stock).
-  const availableStock = (code: string, exceptRowId: string) => {
-    const totalStock = getStockForCode(code, lots);
-    const usedElsewhere = rows.filter((r) => r.id !== exceptRowId && r.code === code).reduce((acc, r) => acc + r.quantity, 0);
-    return Math.max(0, totalStock - usedElsewhere);
+  // Lotes de un código que todavía tienen stock, del más antiguo al más nuevo
+  // (el orden no importa para la elección manual, pero mantenerlo consistente
+  // ayuda a leerlo de un vistazo).
+  const lotsForCode = (code: string): Lot[] => getCandidateLotsForCode(code, lots).filter((l) => l.quantityRemaining > 0);
+
+  // Cuánto queda de un lote específico, descontando lo que ya ocuparon otras
+  // filas de esta misma venta que eligieron ese mismo lote.
+  const availableForLot = (lotId: string, exceptRowId: string): number => {
+    const lot = lots.find((l) => l.id === lotId);
+    if (!lot) return 0;
+    const usedElsewhere = rows.filter((r) => r.id !== exceptRowId && r.lotId === lotId).reduce((acc, r) => acc + r.quantity, 0);
+    return Math.max(0, lot.quantityRemaining - usedElsewhere);
   };
 
-  const addRow = () => { setRows((prev) => [...prev, emptyRow()]); resetPaymentUi(); };
-  const removeRow = (id: string) => { setRows((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev)); resetPaymentUi(); };
-
-  const updateRow = (id: string, updates: Partial<QuickRow>) => {
-    setRows((prev) => prev.map((row) => {
-      if (row.id !== id) return row;
-      const updated = { ...row, ...updates };
-      if ('garmentId' in updates) {
-        const inv = inventory.find((i) => i.id === updates.garmentId);
-        if (inv) {
-          // Precio automático: si la prenda más antigua en stock de este código
-          // ya está en descuento (lote por color), se cobra ese precio rebajado
-          // de una vez — la vendedora puede ajustarlo a mano si hace falta.
-          updated.code = inv.code;
-          updated.name = inv.name;
-          updated.pricePerUnit = getEffectivePriceForCode(inv.code, lots, inv.basePrice, lotColorSettings);
-          const stock = availableStock(inv.code, row.id);
-          updated.quantity = Math.max(1, Math.min(updated.quantity || 1, Math.max(1, stock)));
-          updated.discount = 0;
-        } else {
-          updated.code = '';
-          updated.name = '';
-          updated.pricePerUnit = 0;
-        }
-      }
-      return updated;
-    }));
-    resetPaymentUi();
+  const computeRow = (row: QuickRow): RowComputed => {
+    const lotsForRow = row.code ? lotsForCode(row.code) : [];
+    const needsLotChoice = lotsForRow.length > 1;
+    const selectedLot = lotsForRow.find((l) => l.id === row.lotId) || null;
+    const available = row.lotId ? availableForLot(row.lotId, row.id) : 0;
+    const effectivePrice = selectedLot ? getEffectivePriceForLot(selectedLot, row.basePrice, lotColorSettings) : row.basePrice;
+    const lotDiscountTotal = Math.max(0, row.basePrice - effectivePrice) * row.quantity;
+    const extraDiscount = row.extraDiscount || 0;
+    const totalDiscount = lotDiscountTotal + extraDiscount;
+    const subtotal = row.basePrice * row.quantity;
+    const lineTotal = Math.max(0, subtotal - totalDiscount);
+    const stage = selectedLot?.color ? getLotStage(selectedLot.entryDate, lotColorSettings) : null;
+    const stageInfo = stage ? getStageInfo(stage) : null;
+    const ready = row.garmentId !== '' && !!row.lotId && row.quantity > 0 && row.quantity <= available;
+    return { lotsForRow, needsLotChoice, selectedLot, available, effectivePrice, lotDiscountTotal, totalDiscount, subtotal, lineTotal, stage, stageInfo, ready };
   };
-
-  const validRows = rows.filter((r) => r.garmentId !== '');
-  const rowTotal = validRows.reduce((acc, r) => acc + Math.max(0, r.pricePerUnit * r.quantity - (r.discount || 0)), 0);
-  const rowReady = validRows.length > 0 && validRows.every((r) => r.quantity > 0 && r.quantity <= availableStock(r.code, r.id));
 
   const resetPaymentUi = () => {
     setShowBalancePicker(false);
@@ -107,23 +117,70 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
     setSelectedBalanceCustomer(null);
   };
 
+  const addRow = () => { setRows((prev) => [...prev, emptyRow()]); resetPaymentUi(); };
+  const removeRow = (id: string) => { setRows((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev)); resetPaymentUi(); };
+
+  const updateRow = (id: string, updates: Partial<QuickRow>) => {
+    setRows((prev) => prev.map((row) => {
+      if (row.id !== id) return row;
+      let updated = { ...row, ...updates };
+      if ('garmentId' in updates) {
+        const inv = inventory.find((i) => i.id === updates.garmentId);
+        if (inv) {
+          updated.code = inv.code;
+          updated.name = inv.name;
+          updated.basePrice = inv.basePrice;
+          updated.extraDiscount = 0;
+          // Si solo hay un lote con stock de este código, se auto-selecciona
+          // (nada que elegir); si hay varios, queda sin elegir hasta que la
+          // vendedora vea la etiqueta física y marque cuál es.
+          const candidates = lotsForCode(inv.code);
+          if (candidates.length === 1) {
+            const only = candidates[0];
+            updated.lotId = only.id;
+            updated.quantity = Math.max(1, Math.min(updated.quantity || 1, availableForLot(only.id, row.id)));
+          } else {
+            updated.lotId = '';
+            updated.quantity = 1;
+          }
+        } else {
+          updated = { ...updated, code: '', name: '', basePrice: 0, lotId: '', extraDiscount: 0, quantity: 1 };
+        }
+      } else if ('lotId' in updates && updates.lotId) {
+        const max = Math.max(1, availableForLot(updates.lotId, row.id));
+        updated.quantity = Math.max(1, Math.min(updated.quantity || 1, max));
+      }
+      return updated;
+    }));
+    resetPaymentUi();
+  };
+
+  const validRows = rows.filter((r) => r.garmentId !== '');
+  const rowComputations = new Map(rows.map((r) => [r.id, computeRow(r)]));
+  const rowTotal = validRows.reduce((acc, r) => acc + (rowComputations.get(r.id)?.lineTotal || 0), 0);
+  const rowReady = validRows.length > 0 && validRows.every((r) => rowComputations.get(r.id)?.ready);
+
   const commitRow = async (payments: SalePayment[]) => {
     if (!rowReady) {
-      setError('Selecciona al menos una prenda con una cantidad válida (dentro del stock disponible).');
+      setError('Revisa las prendas: falta elegir lote o la cantidad no cabe en el stock de ese lote.');
       return;
     }
     setError('');
     setSaving(true);
 
-    const items: SaleItem[] = validRows.map((r) => ({
-      id: generateId(),
-      garmentId: r.garmentId,
-      name: r.name,
-      code: r.code,
-      quantity: r.quantity,
-      pricePerUnit: r.pricePerUnit,
-      discount: r.discount || 0,
-    }));
+    const items: SaleItem[] = validRows.map((r) => {
+      const c = rowComputations.get(r.id)!;
+      return {
+        id: generateId(),
+        garmentId: r.garmentId,
+        name: r.name,
+        code: r.code,
+        quantity: r.quantity,
+        pricePerUnit: r.basePrice,
+        discount: c.totalDiscount,
+        lotId: r.lotId || undefined,
+      };
+    });
 
     const balancePayment = payments.find((p) => p.method === 'balance');
 
@@ -215,8 +272,18 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
       submitCombined();
       return;
     }
-    if (!rowReady) {
-      setError('Selecciona al menos una prenda con una cantidad válida (dentro del stock disponible).');
+    if (validRows.length === 0) {
+      setError('Agrega al menos una prenda.');
+      return;
+    }
+    const unresolvedRow = validRows.find((r) => !rowComputations.get(r.id)?.ready);
+    if (unresolvedRow) {
+      const c = rowComputations.get(unresolvedRow.id)!;
+      if (!unresolvedRow.lotId) {
+        setError(`Elige de qué lote/etiqueta es "${unresolvedRow.name}" antes de guardar.`);
+      } else {
+        setError(`Revisa la cantidad de "${unresolvedRow.name}" — no hay suficiente stock en ese lote (disponible: ${c.available}).`);
+      }
       return;
     }
     if (!selectedMethod) {
@@ -275,9 +342,7 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
           ) : (
             <div className="space-y-3">
               {rows.map((row) => {
-                const stock = row.code ? availableStock(row.code, row.id) : 0;
-                const subtotal = row.pricePerUnit * row.quantity;
-                const total = Math.max(0, subtotal - (row.discount || 0));
+                const c = computeRow(row);
                 return (
                   <div key={row.id} className="p-4 bg-white border-2 border-[#2bb297]/30 rounded-2xl shadow-sm">
                     <div className="flex gap-2 items-start">
@@ -290,19 +355,11 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
                         >
                           <option value="">-- Seleccionar --</option>
                           {inventory.map((inv) => {
-                            const invStock = availableStock(inv.code, row.id);
+                            const invStock = getStockForCode(inv.code, lots);
                             const outOfStock = invStock <= 0 && inv.id !== row.garmentId;
-                            const effectivePrice = getEffectivePriceForCode(inv.code, lots, inv.basePrice, lotColorSettings);
-                            const oldestLot = getCandidateLotsForCode(inv.code, lots).find((l) => l.quantityRemaining > 0);
-                            const stageLabel = oldestLot?.color
-                              ? getStageInfo(getLotStage(oldestLot.entryDate, lotColorSettings)).label
-                              : null;
-                            const priceLabel = effectivePrice !== inv.basePrice
-                              ? `${formatCurrency(inv.basePrice)} → ${formatCurrency(effectivePrice)}${stageLabel ? ` (${stageLabel})` : ''}`
-                              : formatCurrency(inv.basePrice);
                             return (
                               <option key={inv.id} value={inv.id} disabled={outOfStock}>
-                                {inv.code} - {inv.name} ({priceLabel}) {outOfStock ? '· Sin stock' : `· Stock: ${invStock}`}
+                                {inv.code} - {inv.name} ({formatCurrency(inv.basePrice)}) {outOfStock ? '· Sin stock' : `· Stock: ${invStock}`}
                               </option>
                             );
                           })}
@@ -318,38 +375,88 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
                     </div>
 
                     {row.garmentId && (
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                        <div>
-                          <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Cant. <span className="text-slate-300 normal-case">(stock {stock})</span></label>
-                          <input
-                            type="number"
-                            min="1"
-                            max={Math.max(1, stock)}
-                            className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-bold text-center"
-                            value={row.quantity}
-                            onChange={(e) => updateRow(row.id, { quantity: Math.max(1, Math.min(Math.max(1, stock), parseInt(e.target.value) || 1)) })}
-                          />
+                      <>
+                        {/* ---- Lote / etiqueta ---- */}
+                        <div className="mt-3">
+                          {c.needsLotChoice ? (
+                            <>
+                              <label className="block text-[9px] font-black text-[#1a8a72] uppercase mb-1">
+                                Lote / etiqueta de la prenda <span className="normal-case text-slate-400">— según lo que diga la etiqueta física</span>
+                              </label>
+                              <select
+                                className="w-full px-3 py-2.5 border-2 border-[#2bb297]/40 rounded-lg text-sm font-bold focus:ring-2 focus:ring-[#2bb297]"
+                                value={row.lotId}
+                                onChange={(e) => updateRow(row.id, { lotId: e.target.value })}
+                              >
+                                <option value="">-- Elegir lote --</option>
+                                {c.lotsForRow.map((lot) => {
+                                  const price = getEffectivePriceForLot(lot, row.basePrice, lotColorSettings);
+                                  const stage = lot.color ? getLotStage(lot.entryDate, lotColorSettings) : null;
+                                  const info = stage ? getStageInfo(stage) : null;
+                                  const avail = availableForLot(lot.id, row.id);
+                                  const priceLabel = price !== row.basePrice
+                                    ? `${formatCurrency(row.basePrice)} → ${formatCurrency(price)}${info ? ` (${info.label})` : ''}`
+                                    : formatCurrency(row.basePrice);
+                                  const disabledOpt = avail <= 0 && lot.id !== row.lotId;
+                                  return (
+                                    <option key={lot.id} value={lot.id} disabled={disabledOpt}>
+                                      {lot.label} — {priceLabel} · disponible: {avail}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </>
+                          ) : c.selectedLot ? (
+                            <p className="text-[10px] font-bold text-slate-400">
+                              Lote: <span className="text-slate-600 font-black">{c.selectedLot.label}</span>
+                              {c.stageInfo && c.stageInfo.label !== 'Precio normal' ? ` · ${c.stageInfo.label}` : ''}
+                              <span className="normal-case"> — único en stock, seleccionado automáticamente</span>
+                            </p>
+                          ) : null}
                         </div>
-                        <div>
-                          <label className="block text-[9px] font-black text-[#8c3a4b] uppercase mb-1">Descuento (Q)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            max={subtotal}
-                            className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-bold"
-                            value={row.discount || ''}
-                            onChange={(e) => updateRow(row.id, { discount: Math.max(0, Math.min(subtotal, parseFloat(e.target.value) || 0)) })}
-                            placeholder="0.00"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Subtotal</label>
-                          <div className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-[#1a8a72] text-right">
-                            {formatCurrency(total)}
+
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                          <div>
+                            <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">
+                              Cant. {row.lotId && <span className="text-slate-300 normal-case">(stock de ese lote: {c.available})</span>}
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max={Math.max(1, c.available)}
+                              disabled={!row.lotId}
+                              className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-bold text-center disabled:opacity-50"
+                              value={row.quantity}
+                              onChange={(e) => updateRow(row.id, { quantity: Math.max(1, Math.min(Math.max(1, c.available), parseInt(e.target.value) || 1)) })}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-black text-[#8c3a4b] uppercase mb-1">Descuento adicional (Q) <span className="normal-case text-slate-400">— opcional</span></label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              max={Math.max(0, c.subtotal - c.lotDiscountTotal)}
+                              className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-bold"
+                              value={row.extraDiscount || ''}
+                              onChange={(e) => updateRow(row.id, { extraDiscount: Math.max(0, Math.min(Math.max(0, c.subtotal - c.lotDiscountTotal), parseFloat(e.target.value) || 0)) })}
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Subtotal</label>
+                            <div className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-[#1a8a72] text-right">
+                              {formatCurrency(c.lineTotal)}
+                            </div>
                           </div>
                         </div>
-                      </div>
+
+                        {c.lotDiscountTotal > 0 && (
+                          <p className="mt-2 text-[10px] font-black text-[#8c3a4b] bg-[#8c3a4b]/10 border border-[#8c3a4b]/20 rounded-lg px-2 py-1.5 inline-block">
+                            Descuento por lote ({c.stageInfo?.label}): -{formatCurrency(c.lotDiscountTotal)}
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                 );
