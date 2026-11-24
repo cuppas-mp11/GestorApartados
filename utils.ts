@@ -148,6 +148,31 @@ export const getLotColorForDate = (entryDate: Date, settings: LotColorSettings):
   return colors[idx];
 };
 
+// Paleta visual para los 6 colores del ciclo (elegida por la administradora:
+// "Opción 1 — Pasteles suaves"). Se usa para pintar el nombre del color como
+// una etiqueta/chip (fondo del color, texto en un tono que haga contraste),
+// tanto en Venta Nueva como en Lotes y en la configuración de Lotes por color.
+export interface LotColorStyle { bg: string; text: string }
+
+export const LOT_COLOR_PALETTE: Record<string, LotColorStyle> = {
+  ROSADO: { bg: '#fbcfe8', text: '#831843' },
+  ROJO: { bg: '#fecaca', text: '#7f1d1d' },
+  AMARILLO: { bg: '#fef08a', text: '#713f12' },
+  PLATEADO: { bg: '#e2e8f0', text: '#1e293b' },
+  VERDE: { bg: '#bbf7d0', text: '#14532d' },
+  AZUL: { bg: '#bfdbfe', text: '#1e3a8a' },
+};
+
+// Para un color que la administradora agregue y no esté en la paleta de
+// arriba (ej. si cambia el ciclo a futuro con un nombre nuevo), o para lotes
+// viejos sin color — un gris neutro en vez de dejarlo sin estilo.
+const LOT_COLOR_FALLBACK: LotColorStyle = { bg: '#e2e8f0', text: '#475569' };
+
+export const getLotColorStyle = (colorName?: string): LotColorStyle => {
+  if (!colorName) return LOT_COLOR_FALLBACK;
+  return LOT_COLOR_PALETTE[colorName.trim().toUpperCase()] || LOT_COLOR_FALLBACK;
+};
+
 // Código de etiqueta tipo "dd/mm" (el que va escrito en la prenda, junto al color).
 export const formatLotColorCode = (entryDateISO: string): string => {
   const d = new Date(entryDateISO);

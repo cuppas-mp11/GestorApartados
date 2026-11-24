@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { InventoryItem, Lot, UserRole, LotColorSettings } from '../types';
-import { getWeeksInStore, getLotAlertLevel, formatDate, getDisplayName, getLotStage, getStageInfo } from '../utils';
+import { getWeeksInStore, getLotAlertLevel, formatDate, getDisplayName, getLotStage, getStageInfo, getLotColorStyle } from '../utils';
 
 interface LotsPanelProps {
   inventory: InventoryItem[];
@@ -165,7 +165,18 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
             >
               ← Volver
             </button>
-            <h2 className="text-lg font-bold text-slate-800 flex-1">Lote {selectedLabel}</h2>
+            <h2 className="text-lg font-bold text-slate-800 flex-1 flex items-center gap-2">
+              {(() => {
+                const color = groups.find((g) => g.label === selectedLabel)?.color;
+                return color ? (
+                  <span
+                    className="inline-block w-3 h-3 rounded-full border border-black/10 shrink-0"
+                    style={{ backgroundColor: getLotColorStyle(color).bg }}
+                  />
+                ) : null;
+              })()}
+              Lote {selectedLabel}
+            </h2>
             <button onClick={close} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
           </div>
 
@@ -421,7 +432,15 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                           {g.pendingCount}
                         </span>
                       )}
-                      <span className="text-sm font-black block">{g.label}</span>
+                      <span className="text-sm font-black flex items-center gap-1.5">
+                        {g.color && (
+                          <span
+                            className="inline-block w-2.5 h-2.5 rounded-full border border-black/10 shrink-0"
+                            style={{ backgroundColor: getLotColorStyle(g.color).bg }}
+                          />
+                        )}
+                        {g.label}
+                      </span>
                       <div className="grid grid-cols-2 gap-1 mt-2">
                         <div className="bg-white/70 rounded-md px-1.5 py-1 text-center">
                           <p className="text-[8px] font-black uppercase opacity-70 leading-none">Ingresadas</p>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, LotColorSettings, LotStage } from '../types';
-import { generateId, formatCurrency, getStockForCode, paymentMethodLabel, amountsMatch, PAYMENT_METHODS, getCandidateLotsForCode, getEffectivePriceForLot, getLotStage, getStageInfo } from '../utils';
+import { generateId, formatCurrency, getStockForCode, paymentMethodLabel, amountsMatch, PAYMENT_METHODS, getCandidateLotsForCode, getEffectivePriceForLot, getLotStage, getStageInfo, getLotColorStyle } from '../utils';
 import { CreditCustomerPicker } from './CreditCustomerPicker';
 
 type SaleDraft = Omit<Sale, 'id' | 'correlative' | 'soldByEmail' | 'status' | 'stockAllocations'>;
@@ -398,21 +398,46 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
                                     ? `${formatCurrency(row.basePrice)} → ${formatCurrency(price)}${info ? ` (${info.label})` : ''}`
                                     : formatCurrency(row.basePrice);
                                   const disabledOpt = avail <= 0 && lot.id !== row.lotId;
+                                  const optStyle = getLotColorStyle(lot.color);
                                   return (
-                                    <option key={lot.id} value={lot.id} disabled={disabledOpt}>
+                                    <option key={lot.id} value={lot.id} disabled={disabledOpt} style={{ backgroundColor: optStyle.bg, color: optStyle.text }}>
                                       {lot.label} — {priceLabel} · disponible: {avail}
                                     </option>
                                   );
                                 })}
                               </select>
+                              {c.selectedLot && (() => {
+                                const badgeStyle = getLotColorStyle(c.selectedLot.color);
+                                return (
+                                  <p className="mt-2 text-[10px] font-bold text-slate-400">
+                                    Elegido:{' '}
+                                    <span
+                                      className="inline-block px-2.5 py-1 rounded-full font-black uppercase tracking-wide"
+                                      style={{ backgroundColor: badgeStyle.bg, color: badgeStyle.text }}
+                                    >
+                                      {c.selectedLot.label}
+                                    </span>
+                                    {c.stageInfo && c.stageInfo.label !== 'Precio normal' ? ` · ${c.stageInfo.label}` : ''}
+                                  </p>
+                                );
+                              })()}
                             </>
-                          ) : c.selectedLot ? (
-                            <p className="text-[10px] font-bold text-slate-400">
-                              Lote: <span className="text-slate-600 font-black">{c.selectedLot.label}</span>
-                              {c.stageInfo && c.stageInfo.label !== 'Precio normal' ? ` · ${c.stageInfo.label}` : ''}
-                              <span className="normal-case"> — único en stock, seleccionado automáticamente</span>
-                            </p>
-                          ) : null}
+                          ) : c.selectedLot ? (() => {
+                            const badgeStyle = getLotColorStyle(c.selectedLot.color);
+                            return (
+                              <p className="text-[10px] font-bold text-slate-400">
+                                Lote:{' '}
+                                <span
+                                  className="inline-block px-2.5 py-1 rounded-full font-black uppercase tracking-wide"
+                                  style={{ backgroundColor: badgeStyle.bg, color: badgeStyle.text }}
+                                >
+                                  {c.selectedLot.label}
+                                </span>
+                                {c.stageInfo && c.stageInfo.label !== 'Precio normal' ? ` · ${c.stageInfo.label}` : ''}
+                                <span className="normal-case"> — único en stock, seleccionado automáticamente</span>
+                              </p>
+                            );
+                          })() : null}
                         </div>
 
                         <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">

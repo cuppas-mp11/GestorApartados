@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { LotColorSettings, ManualPriceException } from '../types';
 import {
   getDisplayName, formatDate, formatCurrency,
-  getActiveLotColors, getLotColorForDate,
+  getActiveLotColors, getLotColorForDate, getLotColorStyle,
 } from '../utils';
 
 interface LotColorSettingsCardProps {
@@ -129,16 +129,32 @@ export const LotColorSettingsCard: React.FC<LotColorSettingsCardProps> = ({ sett
         </div>
 
         <div className="bg-slate-50 rounded-xl p-3 mb-3 text-center">
-          <p className="text-[8px] font-black text-slate-400 uppercase leading-tight">Color de esta semana</p>
-          <p className="text-lg font-black text-[#1a8a72] mt-1">{todayColor || '—'}</p>
+          <p className="text-[8px] font-black text-slate-400 uppercase leading-tight mb-1.5">Color de esta semana</p>
+          {todayColor ? (
+            <span
+              className="inline-block text-lg font-black px-3 py-1 rounded-full"
+              style={{ backgroundColor: getLotColorStyle(todayColor).bg, color: getLotColorStyle(todayColor).text }}
+            >
+              {todayColor}
+            </span>
+          ) : (
+            <p className="text-lg font-black text-[#1a8a72]">—</p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-1.5 mb-4">
-          {activeColors.map((c) => (
-            <span key={c} className={`text-[10px] font-black px-2 py-1 rounded-full border ${c === todayColor ? 'bg-[#2bb297]/10 border-[#2bb297]/40 text-[#1a8a72]' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
-              {c}
-            </span>
-          ))}
+          {activeColors.map((c) => {
+            const style = getLotColorStyle(c);
+            return (
+              <span
+                key={c}
+                className={`text-[10px] font-black px-2 py-1 rounded-full ${c === todayColor ? 'ring-2 ring-[#2bb297] ring-offset-1' : ''}`}
+                style={{ backgroundColor: style.bg, color: style.text }}
+              >
+                {c}
+              </span>
+            );
+          })}
         </div>
 
         <div className="grid grid-cols-3 gap-2 mb-3">
@@ -207,16 +223,20 @@ export const LotColorSettingsCard: React.FC<LotColorSettingsCardProps> = ({ sett
             Ciclo de colores <span className="normal-case text-slate-400">— los últimos pueden quedar vacíos, como reserva</span>
           </label>
           <div className="grid grid-cols-4 gap-2">
-            {colors.map((c, i) => (
+            {colors.map((c, i) => {
+              const style = c ? getLotColorStyle(c) : null;
+              return (
               <input
                 key={i}
                 type="text"
-                className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-black text-center uppercase"
+                className="px-2 py-1.5 border-2 rounded-lg text-xs font-black text-center uppercase"
+                style={style ? { backgroundColor: style.bg, color: style.text, borderColor: style.bg } : undefined}
                 placeholder={i < 6 ? `Color ${i + 1}` : `Reserva ${i + 1}`}
                 value={c}
                 onChange={(e) => updateColor(i, e.target.value)}
               />
-            ))}
+              );
+            })}
           </div>
           {weeksNeeded > 0 && (
             <p className="text-[9px] text-slate-400 font-bold mt-1">

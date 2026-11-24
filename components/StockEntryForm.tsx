@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { InventoryItem, Lot, LotColorSettings } from '../types';
 import {
   generateId, parseLocalDateInput, formatCurrency, getLocalDateStr,
-  buildColorLotLabel, getLotColorForDate,
+  buildColorLotLabel, getLotColorForDate, getLotColorStyle,
 } from '../utils';
 
 interface StockEntryFormProps {
@@ -84,7 +84,16 @@ export const StockEntryForm: React.FC<StockEntryFormProps> = ({ inventory, onSub
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
             <h2 className="text-lg font-bold text-slate-800">Nueva Entrega de Mercadería</h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase">Lote: <span className="text-[#1a8a72]">{label}</span> (según la fecha elegida abajo)</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase">
+              Lote:{' '}
+              <span
+                className="inline-block px-2 py-0.5 rounded-full font-black normal-case"
+                style={{ backgroundColor: getLotColorStyle(color).bg, color: getLotColorStyle(color).text }}
+              >
+                {label}
+              </span>
+              {' '}(según la fecha elegida abajo)
+            </p>
           </div>
           <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
