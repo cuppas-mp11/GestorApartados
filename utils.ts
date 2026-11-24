@@ -41,8 +41,16 @@ export const getDeadlineDate = (dateString: string): string => {
   return date.toISOString();
 };
 
+// Si recibe una fecha "pura" tipo "2026-10-23" (de un <input type="date">,
+// sin hora), la interpreta en hora LOCAL en vez de UTC — si no, un string así
+// se toma como medianoche UTC y en Guatemala (UTC-6) se muestra el día
+// anterior (ej. "23/10" se veía como "22 de octubre"). Si en cambio recibe
+// un timestamp ISO completo (como los que ya usa el sistema para ventas,
+// apartados, lotes, etc.), lo interpreta normal, sin tocar nada.
 export const formatDate = (dateString: string): string => {
-  return new Date(dateString).toLocaleDateString('es-ES', {
+  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+  const date = isDateOnly ? parseLocalDateInput(dateString) : new Date(dateString);
+  return date.toLocaleDateString('es-ES', {
     year: 'numeric',
     month: 'long',
     day: 'numeric'
