@@ -91,7 +91,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const remove = (id: string) => {
+  const remove = (id: string, name: string) => {
+    if (!confirm(`¿Eliminar "${name}" del catálogo? Esto no afecta el stock ya vendido, pero no podrás registrarle más entregas ni ventas.`)) return;
     onUpdate(items.filter(i => i.id !== id));
   };
 
@@ -214,7 +215,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
                       </p>
                     </div>
                   </div>
-                  <button onClick={() => remove(item.id)} className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] p-2 rounded-full hover:bg-[#8c3a4b]/10 transition">
+                  <button onClick={() => remove(item.id, item.name)} className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] p-2 rounded-full hover:bg-[#8c3a4b]/10 transition">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>

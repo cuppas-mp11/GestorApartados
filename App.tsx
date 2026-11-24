@@ -51,6 +51,7 @@ import { FinanceSettingsCard } from './components/FinanceSettingsCard';
 import { ProfitabilitySummary } from './components/ProfitabilitySummary';
 import { DataResetPanel } from './components/DataResetPanel';
 import { LotColorSettingsCard } from './components/LotColorSettingsCard';
+import { InventoryCatalogTable } from './components/InventoryCatalogTable';
 import { SaleForm } from './components/SaleForm';
 import { QuickSaleForm } from './components/QuickSaleForm';
 import { EditSaleModal } from './components/EditSaleModal';
@@ -1434,24 +1435,28 @@ const App: React.FC = () => {
 
           {/* ---------------- PÁGINA: INVENTARIO ---------------- */}
           {page === 'inventario' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
-              <InventoryManager items={inventory} lots={lots} reservations={reservations} onUpdate={handleInventoryUpdate} />
-              {role === 'admin' && (
-                <StockEntryForm inventory={inventory} onSubmit={addStockEntry} lotColorSettings={lotColorSettings} />
-              )}
-              <LotsPanel
-                inventory={inventory}
-                lots={lots}
-                role={role}
-                onDeleteLot={deleteLot}
-                onVerifyLot={verifyLot}
-                onCorrectQuantity={correctLotQuantity}
-                aliases={aliases}
-                lotColorSettings={lotColorSettings}
-              />
-              {role === 'admin' && (
-                <LotColorSettingsCard settings={lotColorSettings} aliases={aliases} onSave={saveLotColorSettings} />
-              )}
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+                <InventoryManager items={inventory} lots={lots} reservations={reservations} onUpdate={handleInventoryUpdate} />
+                {role === 'admin' && (
+                  <StockEntryForm inventory={inventory} onSubmit={addStockEntry} lotColorSettings={lotColorSettings} />
+                )}
+                <LotsPanel
+                  inventory={inventory}
+                  lots={lots}
+                  role={role}
+                  onDeleteLot={deleteLot}
+                  onVerifyLot={verifyLot}
+                  onCorrectQuantity={correctLotQuantity}
+                  aliases={aliases}
+                  lotColorSettings={lotColorSettings}
+                />
+                {role === 'admin' && (
+                  <LotColorSettingsCard settings={lotColorSettings} aliases={aliases} onSave={saveLotColorSettings} />
+                )}
+              </div>
+
+              <InventoryCatalogTable items={inventory} lots={lots} reservations={reservations} />
             </div>
           )}
 
