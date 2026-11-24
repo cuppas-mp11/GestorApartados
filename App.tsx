@@ -124,6 +124,10 @@ const App: React.FC = () => {
   const [page, setPage] = useState<Page>('inicio');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [saleMode, setSaleMode] = useState<'quick' | 'detailed'>('quick');
+  // Para la vendedora el Resumen del día va hasta abajo y oculto por
+  // seguridad (su pantalla puede estar a la vista de otras personas) — el
+  // admin siempre lo ve, así que este estado solo aplica a su vista.
+  const [showSalesStatsForEmployee, setShowSalesStatsForEmployee] = useState(false);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [resetBusy, setResetBusy] = useState(false);
@@ -1384,43 +1388,79 @@ const App: React.FC = () => {
           )}
 
           {/* ---------------- PÁGINA: VENTAS ---------------- */}
-          {page === 'ventas' && (
-            <div>
-              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest">Resumen</h2>
-                <SalesExportMenu sales={sales} aliases={aliases} />
-              </div>
-              <SalesStats sales={sales} />
-
-              <div className="mt-6 mb-4 flex p-1 bg-slate-50 rounded-xl w-fit gap-1 border border-slate-200">
-                <button
-                  onClick={() => setSaleMode('quick')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${saleMode === 'quick' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  Venta del día
-                </button>
-                <button
-                  onClick={() => setSaleMode('detailed')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${saleMode === 'detailed' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  Venta detallada (con clienta)
-                </button>
-              </div>
-
-              {saleMode === 'quick' ? (
-                <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} sales={sales} role={role} onCancelSale={cancelSale} onEditSale={setEditingSale} lotColorSettings={lotColorSettings} />
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                  <div className="lg:col-span-1 space-y-4">
-                    <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} lotColorSettings={lotColorSettings} />
-                  </div>
-                  <div className="lg:col-span-3">
-                    <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
-                  </div>
+          {page === 'ventas' && (() => {
+            const resumenBlock = (
+              <div>
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                  <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest">Resumen</h2>
+                  <SalesExportMenu sales={sales} aliases={aliases} />
                 </div>
-              )}
-            </div>
-          )}
+                <SalesStats sales={sales} />
+              </div>
+            );
+
+            const ventasBlock = (
+              <div>
+                <div className="mb-4 flex p-1 bg-slate-50 rounded-xl w-fit gap-1 border border-slate-200">
+                  <button
+                    onClick={() => setSaleMode('quick')}
+                    className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${saleMode === 'quick' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Venta del día
+                  </button>
+                  <button
+                    onClick={() => setSaleMode('detailed')}
+                    className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${saleMode === 'detailed' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Venta detallada (con clienta)
+                  </button>
+                </div>
+
+                {saleMode === 'quick' ? (
+                  <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} sales={sales} role={role} onCancelSale={cancelSale} onEditSale={setEditingSale} lotColorSettings={lotColorSettings} />
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                    <div className="lg:col-span-1 space-y-4">
+                      <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} lotColorSettings={lotColorSettings} />
+                    </div>
+                    <div className="lg:col-span-3">
+                      <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+
+            // Admin: igual que siempre (Resumen arriba). Vendedora: la venta
+            // va primero y el Resumen pasa hasta abajo, oculto por defecto,
+            // ya que su pantalla puede estar a la vista de otras personas.
+            if (role === 'admin') {
+              return (
+                <div>
+                  {resumenBlock}
+                  <div className="mt-6">{ventasBlock}</div>
+                </div>
+              );
+            }
+
+            return (
+              <div>
+                {ventasBlock}
+                <div className="mt-8 border-t border-slate-200 pt-4">
+                  <button
+                    onClick={() => setShowSalesStatsForEmployee((v) => !v)}
+                    className="flex items-center gap-2 text-xs font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition"
+                  >
+                    <svg className={`w-4 h-4 transition-transform ${showSalesStatsForEmployee ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                    {showSalesStatsForEmployee ? 'Ocultar resumen del día' : 'Ver resumen del día'}
+                  </button>
+                  {showSalesStatsForEmployee && <div className="mt-4">{resumenBlock}</div>}
+                </div>
+              </div>
+            );
+          })()}
 
           {editingSale && (
             <EditSaleModal

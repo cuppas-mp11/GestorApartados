@@ -34,12 +34,20 @@ const emptyDraft = () => ({
 });
 
 export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, lots, customers, sales, role, onCancelSale, onEditSale, lotColorSettings }) => {
+  // La ventana de "Venta Nueva" se abre bajo demanda — así la vendedora ve
+  // primero un botón llamativo en vez del formulario completo, y la ventana
+  // se queda abierta tras cada "Guardar" para seguir registrando sin reabrirla.
+  const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState(emptyDraft());
   const [showBalancePicker, setShowBalancePicker] = useState(false);
   const [combinedMode, setCombinedMode] = useState(false);
   const [combinedAmounts, setCombinedAmounts] = useState<Partial<Record<PaymentMethod, string>>>({});
   const [combinedCustomer, setCombinedCustomer] = useState<Customer | null>(null);
   const [showCombinedBalancePicker, setShowCombinedBalancePicker] = useState(false);
+  // Método elegido para la línea actual — ya NO guarda de una vez al elegirlo;
+  // solo se confirma y se guarda al presionar el botón "Guardar" de abajo.
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
+  const [selectedBalanceCustomer, setSelectedBalanceCustomer] = useState<Customer | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [methodFilter, setMethodFilter] = useState<'ALL' | 'DISCOUNT' | PaymentMethod>('ALL');
@@ -85,6 +93,8 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
     setCombinedAmounts({});
     setCombinedCustomer(null);
     setShowCombinedBalancePicker(false);
+    setSelectedMethod(null);
+    setSelectedBalanceCustomer(null);
   };
 
   const commitRow = async (payments: SalePayment[]) => {
@@ -128,12 +138,20 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
     }
   };
 
-  const handleQuickMethod = (method: PaymentMethod) => {
-    commitRow([{ id: generateId(), method, amount: rowTotal }]);
+  // Ya no guardan la venta — solo marcan la selección. El guardado real
+  // ocurre al presionar "Guardar" (ver handleSaveClick).
+  const handleSelectMethod = (method: PaymentMethod) => {
+    setError('');
+    setSelectedMethod(method);
+    setShowBalancePicker(false);
+    setCombinedMode(false);
   };
 
-  const handleBalanceCustomer = (customer: Customer) => {
-    commitRow([{ id: generateId(), method: 'balance', amount: rowTotal, customerId: customer.id, customerName: customer.name }]);
+  const handleSelectBalanceCustomer = (customer: Customer) => {
+    setError('');
+    setSelectedMethod('balance');
+    setSelectedBalanceCustomer(customer);
+    setShowBalancePicker(false);
   };
 
   // ---- Pago combinado ----
@@ -174,8 +192,67 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
     commitRow(payments);
   };
 
+  const canSave = combinedMode
+    ? combinedComplete
+    : rowReady && (
+        (!!selectedMethod && selectedMethod !== 'balance') ||
+        (selectedMethod === 'balance' && !!selectedBalanceCustomer)
+      );
+
+  const handleSaveClick = () => {
+    if (combinedMode) {
+      submitCombined();
+      return;
+    }
+    if (!rowReady) {
+      setError('Selecciona una prenda y una cantidad válida (dentro del stock disponible).');
+      return;
+    }
+    if (!selectedMethod) {
+      setError('Selecciona un método de pago.');
+      return;
+    }
+    if (selectedMethod === 'balance') {
+      if (!selectedBalanceCustomer) {
+        setError('Elige la clienta para pagar con saldo a favor.');
+        return;
+      }
+      commitRow([{ id: generateId(), method: 'balance', amount: rowTotal, customerId: selectedBalanceCustomer.id, customerName: selectedBalanceCustomer.name }]);
+      return;
+    }
+    commitRow([{ id: generateId(), method: selectedMethod, amount: rowTotal }]);
+  };
+
+  if (!isOpen) {
+    return (
+      <button
+        onClick={() => setIsOpen(true)}
+        className="w-full bg-[#2bb297] hover:bg-[#1a8a72] text-white font-black py-5 rounded-2xl transition text-base flex items-center justify-center gap-3 shadow-sm uppercase tracking-wide"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Venta Nueva
+      </button>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-shrink-0">
+          <div>
+            <h2 className="text-lg font-black text-slate-800">Venta del día</h2>
+            <p className="text-xs font-black text-[#1a8a72] mt-0.5">Total del día: {formatCurrency(totalToday)}</p>
+          </div>
+          <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-5 overflow-y-auto flex-1 space-y-6">
       {/* ---- Fila de captura ---- */}
       <div className="bg-white p-5 rounded-2xl border-2 border-[#2bb297]/30 shadow-sm">
         <p className="text-[10px] font-black text-[#1a8a72] uppercase tracking-widest mb-3">Registrar prenda vendida</p>
@@ -254,43 +331,65 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">Método de pago →</span>
-          {QUICK_METHODS.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              disabled={!rowReady || saving}
-              onClick={() => handleQuickMethod(m.value)}
-              className="w-12 h-12 rounded-full border-2 border-slate-200 hover:border-[#2bb297] disabled:opacity-40 disabled:hover:border-slate-200 flex items-center justify-center text-[10px] font-black text-slate-500 hover:text-[#1a8a72] hover:bg-[#2bb297]/5 transition"
-              title={paymentMethodLabel(m.value)}
-            >
-              {m.short}
-            </button>
-          ))}
+          {QUICK_METHODS.map((m) => {
+            const active = !combinedMode && selectedMethod === m.value;
+            return (
+              <button
+                key={m.value}
+                type="button"
+                disabled={!rowReady || saving}
+                onClick={() => handleSelectMethod(m.value)}
+                className={`w-12 h-12 rounded-full border-2 disabled:opacity-40 disabled:hover:border-slate-200 flex items-center justify-center text-[10px] font-black transition ${
+                  active
+                    ? 'border-[#2bb297] bg-[#2bb297] text-white'
+                    : 'border-slate-200 hover:border-[#2bb297] text-slate-500 hover:text-[#1a8a72] hover:bg-[#2bb297]/5'
+                }`}
+                title={paymentMethodLabel(m.value)}
+              >
+                {m.short}
+              </button>
+            );
+          })}
           <button
             type="button"
             disabled={!rowReady || saving}
-            onClick={() => { setShowBalancePicker(true); setCombinedMode(false); }}
-            className="px-4 py-3 rounded-xl border-2 border-[#c9a876]/50 hover:border-[#c9a876] disabled:opacity-40 bg-[#c9a876]/10 text-[10px] font-black text-[#8a6a3f] uppercase tracking-wide transition"
+            onClick={() => { setShowBalancePicker(true); setCombinedMode(false); setSelectedMethod(null); setSelectedBalanceCustomer(null); }}
+            className={`px-4 py-3 rounded-xl border-2 disabled:opacity-40 text-[10px] font-black uppercase tracking-wide transition ${
+              !combinedMode && selectedMethod === 'balance'
+                ? 'border-[#c9a876] bg-[#c9a876] text-white'
+                : 'border-[#c9a876]/50 hover:border-[#c9a876] bg-[#c9a876]/10 text-[#8a6a3f]'
+            }`}
           >
             Saldo a favor
           </button>
           <button
             type="button"
             disabled={!rowReady || saving}
-            onClick={() => { setCombinedMode(true); setShowBalancePicker(false); }}
-            className="px-4 py-3 rounded-xl border-2 border-slate-700/30 hover:border-slate-700 disabled:opacity-40 bg-slate-700/5 text-[10px] font-black text-slate-700 uppercase tracking-wide transition"
+            onClick={() => { setCombinedMode(true); setShowBalancePicker(false); setSelectedMethod(null); setSelectedBalanceCustomer(null); }}
+            className={`px-4 py-3 rounded-xl border-2 disabled:opacity-40 text-[10px] font-black uppercase tracking-wide transition ${
+              combinedMode
+                ? 'border-slate-700 bg-slate-700 text-white'
+                : 'border-slate-700/30 hover:border-slate-700 bg-slate-700/5 text-slate-700'
+            }`}
           >
             Pago combinado
           </button>
           {saving && <span className="text-[10px] font-black text-slate-400 uppercase">Guardando...</span>}
         </div>
 
+        {!combinedMode && selectedMethod === 'balance' && selectedBalanceCustomer && !showBalancePicker && (
+          <p className="mt-2 text-[10px] font-bold text-[#8a6a3f]">
+            Pagará con saldo de <span className="font-black">{selectedBalanceCustomer.name}</span>{' '}
+            <button type="button" onClick={() => setShowBalancePicker(true)} className="underline">cambiar</button>
+          </p>
+        )}
+
         {showBalancePicker && (
           <div className="mt-3">
             <CreditCustomerPicker
               customers={customers}
               selectedCustomerId=""
-              onSelect={handleBalanceCustomer}
+              onSelect={handleSelectBalanceCustomer}
               onClose={() => setShowBalancePicker(false)}
             />
           </div>
@@ -357,16 +456,11 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
               {amountsMatch(combinedTotal, rowTotal) ? ' ✓' : ''}
             </div>
 
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                disabled={!combinedComplete || saving}
-                onClick={submitCombined}
-                className="flex-1 bg-slate-700 disabled:bg-slate-300 text-white text-xs font-black py-2.5 rounded-lg uppercase tracking-wide"
-              >
-                Guardar línea combinada
-              </button>
-              <button type="button" onClick={resetPaymentUi} className="px-4 bg-slate-200 text-slate-600 text-xs font-black py-2.5 rounded-lg">
+            <div className={`mt-3 text-[10px] font-bold ${combinedComplete ? 'text-[#1a8a72]' : 'text-slate-400'}`}>
+              {combinedComplete ? 'Listo — presiona "Guardar" abajo para registrar la venta.' : 'Completa los montos y, si aplica, la clienta de saldo a favor.'}
+            </div>
+            <div className="mt-2">
+              <button type="button" onClick={resetPaymentUi} className="px-4 bg-slate-200 text-slate-600 text-xs font-black py-2 rounded-lg">
                 Cancelar
               </button>
             </div>
@@ -378,14 +472,14 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
         )}
 
         <p className="mt-3 text-[9px] text-slate-400 font-bold uppercase tracking-wide">
-          EF= Efectivo &nbsp;&nbsp; TC=Tarjeta &nbsp;&nbsp; DEP=Depósito o transferencia — cada línea se guarda sola al elegir el método.
+          EF= Efectivo &nbsp;&nbsp; TC=Tarjeta &nbsp;&nbsp; DEP=Depósito o transferencia — elige el método y presiona "Guardar" abajo para registrar la venta.
         </p>
       </div>
 
       {/* ---- Ventas de hoy ---- */}
       <div>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Venta del día</p>
+          <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Historial de hoy</p>
           <p className="text-lg font-black text-[#1a8a72]">Total del día: {formatCurrency(totalToday)}</p>
         </div>
 
@@ -502,6 +596,19 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
         <p className="mt-2 text-[10px] text-slate-400 font-bold uppercase tracking-wide">
           {getSaleItemsCount({ items: completedToday.flatMap((s) => s.items) } as Sale)} prenda(s) vendidas hoy en {completedToday.length} venta(s)
         </p>
+      </div>
+        </div>
+
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex-shrink-0 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            disabled={!canSave || saving}
+            onClick={handleSaveClick}
+            className="px-10 py-3.5 bg-[#2bb297] hover:bg-[#1a8a72] disabled:bg-slate-300 text-white text-sm font-black rounded-xl uppercase tracking-wide transition shadow-sm"
+          >
+            {saving ? 'Guardando...' : 'Guardar'}
+          </button>
+        </div>
       </div>
     </div>
   );
