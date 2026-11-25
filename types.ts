@@ -252,60 +252,18 @@ export interface CreditTransaction {
 
 // ---- Fase 3: Costos, gastos y rentabilidad (visible SOLO para admin) ----
 
-// Catálogo de "pacas" (paquetes de ropa comprados por precio y cantidad) —
-// funciona como el catálogo de Inventario, pero para la materia prima: cada
-// compra con un precio y una cantidad específicos genera (o reutiliza) un
-// código de paca. Si se registra una compra con el MISMO precio y la MISMA
-// cantidad que una paca que ya existe, no se crea un código nuevo — se agrega
-// esa fecha al historial de compras de esa paca (`purchases`), porque se trata
-// de la misma "referencia" de costo. Solo si las características son distintas
-// se genera un código nuevo (PACA001, PACA002...).
-export interface PacaPurchase {
+// Precio por prenda (costo promedio de cada prenda comprada) — un solo valor
+// general para todas las prendas, que reemplaza al antiguo catálogo de pacas.
+// Cada vez que cambia, se agrega una entrada NUEVA al historial (nunca se edita
+// ni se borra una anterior): así queda el registro de qué precio se usó y desde
+// cuándo, y las ventas viejas siguen calculándose con el precio que regía ese día.
+export interface GarmentPriceEntry {
   id: string;
-  date: string; // YYYY-MM-DD, fecha en la que se compró esta vez
+  price: number; // Q por prenda
+  effectiveDate: string; // YYYY-MM-DD — desde cuándo rige este precio
+  note?: string; // ej. "Subió el precio de las pacas"
   createdByEmail: string;
   createdAt: string;
-}
-
-export interface Paca {
-  id: string;
-  code: string; // ej. "PACA001", auto-generado y consecutivo
-  balePrice: number; // "Precio de paca"
-  quantity: number; // cantidad de prendas que trae esta paca
-  unitCost: number; // balePrice / quantity, ya calculado y guardado
-  note?: string; // ej. "Blusas, proveedor Juana — sticker rojo"
-  purchases: PacaPurchase[]; // historial de cada vez que se volvió a comprar esta misma paca
-  createdByEmail: string;
-  createdAt: string;
-}
-
-// Asignación manual de cuántas prendas (de un código, en un rango de fechas)
-// salieron de cada paca — es la versión "costo" del pago combinado: la suma de
-// las cantidades debe cuadrar exacto con el total vendido de ese código en ese
-// rango.
-export interface PacaAllocation {
-  pacaId: string;
-  pacaCode: string;
-  quantity: number;
-}
-
-// Costeo semanal/mensual manual: como todavía no hay lector de código de
-// barras, la única forma de saber de qué paca salió cada prenda vendida es que
-// el admin revise las etiquetas físicas (diferenciadas por un sticker de
-// color) que la vendedora le reporta, y reparta la cantidad vendida de cada
-// código de prenda entre las pacas correspondientes. Cada reconciliación cubre
-// UN código de prenda y UN rango de fechas (normalmente la semana del reporte).
-export interface PacaReconciliation {
-  id: string;
-  code: string; // InventoryItem.code (ej. "PNT100")
-  startDate: string; // YYYY-MM-DD
-  endDate: string; // YYYY-MM-DD
-  totalQuantity: number; // cantidad vendida de ese código en ese rango (al momento de costear)
-  allocations: PacaAllocation[]; // debe sumar exactamente totalQuantity
-  createdByEmail: string;
-  createdAt: string;
-  updatedByEmail?: string;
-  updatedAt?: string;
 }
 
 // Categoría de gasto definida por la usuaria (no una lista fija) — igual que el
@@ -379,7 +337,7 @@ export interface FinanceSettings {
   // depósito (en efectivo/otro no se genera factura, así que no aplica).
   invoiceTaxPercent: number;
   // % que recibe la vendedora sobre la ganancia neta del periodo (ya descontado
-  // el costo de paca costeado, los costos por prenda, la comisión de tarjeta y el IVA).
+  // el precio por prenda, los costos por prenda, la comisión de tarjeta y el IVA).
   vendorCommissionPercent: number;
   // Costos fijos por cada prenda vendida (planchado, empaque, plástico, etc.)
   unitCosts: UnitCostItem[];

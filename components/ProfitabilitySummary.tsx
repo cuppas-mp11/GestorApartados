@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Sale, Expense, ExpenseCategoryItem, Paca, PacaReconciliation, FinanceSettings } from '../types';
+import { Sale, Expense, ExpenseCategoryItem, GarmentPriceEntry, FinanceSettings } from '../types';
 import {
   formatCurrency,
   formatDate,
@@ -19,8 +19,7 @@ interface ProfitabilitySummaryProps {
   sales: Sale[];
   expenses: Expense[];
   categories: ExpenseCategoryItem[];
-  pacas: Paca[];
-  reconciliations: PacaReconciliation[];
+  garmentPrices: GarmentPriceEntry[];
   settings: FinanceSettings;
   aliases: Record<string, string>;
 }
@@ -32,7 +31,7 @@ const firstOfMonthStr = () => {
 };
 
 export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
-  sales, expenses, categories, pacas, reconciliations, settings, aliases,
+  sales, expenses, categories, garmentPrices, settings, aliases,
 }) => {
   const [start, setStart] = useState(firstOfMonthStr());
   const [end, setEnd] = useState(todayStr());
@@ -41,11 +40,11 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
   const rangeExpenses = getExpensesInRange(expenses, start, end);
   const unitCostsExtra = getUnitCostsTotal(settings.unitCosts || []);
 
-  const breakdown = calculateProfitability(rangeSales, pacas, reconciliations, settings, start, end);
+  const breakdown = calculateProfitability(rangeSales, garmentPrices, settings);
   const expensesTotal = getExpensesTotal(rangeExpenses);
   const finalProfit = breakdown.profitAfterCommission - expensesTotal;
 
-  const bySeller = calculateCommissionsBySeller(rangeSales, pacas, reconciliations, settings, start, end);
+  const bySeller = calculateCommissionsBySeller(rangeSales, garmentPrices, settings);
 
   const exportExcel = () => {
     const rows: (string | number)[][] = [];
@@ -55,9 +54,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
     rows.push(['Concepto', 'Monto (Q)']);
     rows.push(['Ingresos por ventas', breakdown.revenue]);
     rows.push(['Prendas vendidas', breakdown.itemsSold]);
-    rows.push(['Prendas ya costeadas (paca asignada)', breakdown.itemsCosted]);
-    rows.push(['Prendas pendientes de costear', breakdown.itemsPending]);
-    rows.push(['Costo de paca (solo lo costeado)', -breakdown.cogsPaca]);
+    rows.push(['Costo de prendas (precio por prenda × prendas vendidas)', -breakdown.cogsGarment]);
     rows.push(['Costos por prenda (planchado, empaque, etc.)', -breakdown.cogsUnitCosts]);
     rows.push(['Total pagado con tarjeta', breakdown.cardTotal]);
     rows.push([`Comisión de tarjeta (${settings.cardCommissionPercent}%)`, -breakdown.cardFee]);
@@ -70,10 +67,10 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
     rows.push(['GANANCIA FINAL', finalProfit]);
     rows.push([]);
     rows.push(['Comisión por vendedora']);
-    rows.push(['Vendedora', 'Prendas vendidas', 'Costeadas', 'Pendientes', 'Ingresos (Q)', 'Ganancia neta (Q)', 'Comisión (Q)']);
+    rows.push(['Vendedora', 'Prendas vendidas', 'Ingresos (Q)', 'Ganancia neta (Q)', 'Comisión (Q)']);
     bySeller.forEach((s) =>
       rows.push([
-        getDisplayName(s.email, aliases), s.breakdown.itemsSold, s.breakdown.itemsCosted, s.breakdown.itemsPending,
+        getDisplayName(s.email, aliases), s.breakdown.itemsSold,
         s.breakdown.revenue, s.breakdown.netProfit, s.breakdown.vendorCommission,
       ])
     );
@@ -113,10 +110,10 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
         </div>
       </div>
 
-      {breakdown.itemsPending > 0 && (
+      {garmentPrices.length === 0 && (
         <div className="bg-[#c9a876]/10 border border-[#c9a876]/30 rounded-xl px-3 py-2 mb-4">
           <p className="text-[11px] font-bold text-[#8a6a3f]">
-            ⚠️ {breakdown.itemsPending} prenda(s) vendida(s) en este rango todavía no se han costeado (no tienen paca asignada por sticker) — su costo no se está incluyendo en la ganancia, así que el número de abajo es conservador, no definitivo. Costéalas en "Costear ventas por sticker".
+            ⚠️ Todavía no has registrado el "Precio por prenda" (panel de la derecha). Mientras tanto, el costo de la ropa no se descuenta y la ganancia se ve más alta de lo real.
           </p>
         </div>
       )}
@@ -125,9 +122,9 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
       <div className="space-y-1.5 mb-5">
         <Row label="Ingresos por ventas" value={breakdown.revenue} sub={`${rangeSales.length} venta(s) · ${breakdown.itemsSold} prenda(s)`} positive />
         <Row
-          label="Costo de paca"
-          value={-breakdown.cogsPaca}
-          sub={`${breakdown.itemsCosted} de ${breakdown.itemsSold} prenda(s) costeadas${breakdown.itemsPending > 0 ? ` · ${breakdown.itemsPending} pendiente(s)` : ''}`}
+          label="Costo de prendas"
+          value={-breakdown.cogsGarment}
+          sub={`Precio por prenda × ${breakdown.itemsSold} prenda(s) vendida(s)`}
         />
         <Row label="Costos por prenda" value={-breakdown.cogsUnitCosts} sub={`${formatCurrency(unitCostsExtra)} × ${breakdown.itemsSold}`} />
         <Row label="Comisión de tarjeta" value={-breakdown.cardFee} sub={`${settings.cardCommissionPercent || 0}% de ${formatCurrency(breakdown.cardTotal)}`} />
@@ -151,7 +148,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
                 <div>
                   <p className="text-sm font-black text-slate-700">{getDisplayName(s.email, aliases)}</p>
                   <p className="text-[10px] text-slate-400 font-bold">
-                    {s.breakdown.itemsSold} prenda(s){s.breakdown.itemsPending > 0 ? ` (${s.breakdown.itemsPending} sin costear)` : ''} · {formatCurrency(s.breakdown.revenue)} en ventas · ganancia neta {formatCurrency(s.breakdown.netProfit)}
+                    {s.breakdown.itemsSold} prenda(s) · {formatCurrency(s.breakdown.revenue)} en ventas · ganancia neta {formatCurrency(s.breakdown.netProfit)}
                   </p>
                 </div>
                 <div className="text-right">
@@ -165,7 +162,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
       </div>
 
       <p className="text-[9px] text-slate-400 font-bold leading-relaxed mt-4 pt-3 border-t border-slate-100">
-        El costo de paca solo cuenta lo que ya se costeó manualmente (por sticker) en "Costear ventas por sticker" — lo pendiente se deja fuera, no se estima, para no mezclar un número exacto con uno adivinado. Un costeo solo cuenta aquí si su rango de fechas cae completo dentro del rango que estás revisando. La comisión de tarjeta y el IVA se calculan sobre lo realmente cobrado por cada método. Si el periodo cierra en pérdida, la comisión de vendedora es Q0.00, nunca negativa.
+        El costo de las prendas usa el "Precio por prenda" que estaba vigente el día de cada venta, así que si cambias el precio, los reportes de fechas anteriores no se alteran. La comisión de tarjeta y el IVA se calculan sobre lo realmente cobrado por cada método. Si el periodo cierra en pérdida, la comisión de vendedora es Q0.00, nunca negativa.
       </p>
     </div>
   );

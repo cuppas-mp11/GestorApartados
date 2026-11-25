@@ -8,6 +8,7 @@ import {
   deleteDoc,
   updateDoc,
   runTransaction,
+  arrayUnion,
   getDocs,
   writeBatch,
 } from 'firebase/firestore';
@@ -25,9 +26,7 @@ import {
   SaleStatus,
   StockAllocation,
   CreditTransaction,
-  Paca,
-  PacaPurchase,
-  PacaReconciliation,
+  GarmentPriceEntry,
   Expense,
   ExpenseCategoryItem,
   ExpenseFrequency,
@@ -44,8 +43,7 @@ import { LotsPanel } from './components/LotsPanel';
 import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
-import { PacasPanel } from './components/PacasPanel';
-import { PacaReconciliationPanel } from './components/PacaReconciliationPanel';
+import { GarmentPriceCard } from './components/GarmentPriceCard';
 import { ExpensesPanel } from './components/ExpensesPanel';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
 import { ProfitabilitySummary } from './components/ProfitabilitySummary';
@@ -73,8 +71,6 @@ import {
   normalizeSale,
   getLocalDateStr,
   isSameLocalDay,
-  getNextPacaCode,
-  findMatchingPaca,
   DEFAULT_LOT_COLOR_SETTINGS,
 } from './utils';
 
@@ -86,8 +82,7 @@ const SALES_COLLECTION = 'sales';
 const CREDIT_LEDGER_COLLECTION = 'creditLedger';
 const LOT_COLOR_SETTINGS_COLLECTION = 'lotColorSettings';
 const LOT_COLOR_SETTINGS_DOC_ID = 'config';
-const PACAS_COLLECTION = 'pacas';
-const PACA_RECONCILIATIONS_COLLECTION = 'pacaReconciliations';
+const GARMENT_PRICE_DOC_ID = 'garmentPrice'; // settings/garmentPrice: historial de Precio por prenda
 const EXPENSE_CATEGORIES_COLLECTION = 'expenseCategories';
 const EXPENSE_TEMPLATES_COLLECTION = 'expenseTemplates';
 const EXPENSES_COLLECTION = 'expenses';
@@ -113,8 +108,7 @@ const App: React.FC = () => {
   const [lotColorSettings, setLotColorSettings] = useState<LotColorSettings>(DEFAULT_LOT_COLOR_SETTINGS);
   const [sales, setSales] = useState<Sale[]>([]);
   const [creditLedger, setCreditLedger] = useState<CreditTransaction[]>([]);
-  const [pacas, setPacas] = useState<Paca[]>([]);
-  const [pacaReconciliations, setPacaReconciliations] = useState<PacaReconciliation[]>([]);
+  const [garmentPrices, setGarmentPrices] = useState<GarmentPriceEntry[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryItem[]>([]);
   const [expenseTemplates, setExpenseTemplates] = useState<ExpenseTemplate[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -276,8 +270,7 @@ const App: React.FC = () => {
   // errores de "permiso denegado" en la consola de una empleada.
   useEffect(() => {
     if (!user || role !== 'admin') {
-      setPacas([]);
-      setPacaReconciliations([]);
+      setGarmentPrices([]);
       setExpenseCategories([]);
       setExpenseTemplates([]);
       setExpenses([]);
@@ -285,16 +278,10 @@ const App: React.FC = () => {
       return;
     }
 
-    const unsubPacas = onSnapshot(
-      collection(db, PACAS_COLLECTION),
-      (snapshot) => setPacas(snapshot.docs.map((d) => d.data() as Paca)),
-      (error) => console.error('Error leyendo catálogo de pacas:', error)
-    );
-
-    const unsubReconciliations = onSnapshot(
-      collection(db, PACA_RECONCILIATIONS_COLLECTION),
-      (snapshot) => setPacaReconciliations(snapshot.docs.map((d) => d.data() as PacaReconciliation)),
-      (error) => console.error('Error leyendo costeos de pacas:', error)
+    const unsubGarmentPrices = onSnapshot(
+      doc(db, SETTINGS_COLLECTION, GARMENT_PRICE_DOC_ID),
+      (snap) => setGarmentPrices(snap.exists() ? ((snap.data().entries || []) as GarmentPriceEntry[]) : []),
+      (error) => console.error('Error leyendo precio por prenda:', error)
     );
 
     const unsubExpenseCategories = onSnapshot(
@@ -322,8 +309,7 @@ const App: React.FC = () => {
     );
 
     return () => {
-      unsubPacas();
-      unsubReconciliations();
+      unsubGarmentPrices();
       unsubExpenseCategories();
       unsubExpenseTemplates();
       unsubExpenses();
@@ -1006,74 +992,22 @@ const App: React.FC = () => {
 
   // ---- Fase 3: Costos, gastos y rentabilidad (solo admin) ----
 
-  // Registra la compra de una paca. Si ya existe una paca con el MISMO precio
-  // y la MISMA cantidad, no se crea un código nuevo — se le agrega esta fecha
-  // a su historial de compras (purchases).
-  const registerPacaPurchase = async (balePrice: number, quantity: number, date: string, note: string) => {
+  // Registra un nuevo Precio por prenda (con la fecha desde la que rige). Siempre
+  // se AGREGA al historial — nunca se edita ni se borra una entrada anterior.
+  const addGarmentPrice = async (price: number, effectiveDate: string, note: string) => {
     if (role !== 'admin') {
-      alert('Solo un administrador puede registrar pacas.');
+      alert('Solo un administrador puede cambiar el precio por prenda.');
       return;
     }
-    const purchase: PacaPurchase = {
+    const entry: GarmentPriceEntry = {
       id: generateId(),
-      date,
+      price,
+      effectiveDate,
+      ...(note ? { note } : {}),
       createdByEmail: user?.email || 'desconocido',
       createdAt: new Date().toISOString(),
     };
-    const existing = findMatchingPaca(pacas, balePrice, quantity);
-    if (existing) {
-      await updateDoc(doc(db, PACAS_COLLECTION, existing.id), {
-        purchases: [...existing.purchases, purchase],
-      });
-      return;
-    }
-    const paca: Paca = {
-      id: generateId(),
-      code: getNextPacaCode(pacas),
-      balePrice,
-      quantity,
-      unitCost: balePrice / quantity,
-      note: note || undefined,
-      purchases: [purchase],
-      createdByEmail: user?.email || 'desconocido',
-      createdAt: new Date().toISOString(),
-    };
-    await setDoc(doc(db, PACAS_COLLECTION, paca.id), paca);
-  };
-
-  // Guarda (o edita) un costeo: cuántas prendas de un código, en un rango de
-  // fechas, salieron de cada paca — según el sticker físico que revisó el admin.
-  const savePacaReconciliation = async (
-    data: Omit<PacaReconciliation, 'id' | 'createdByEmail' | 'createdAt'>,
-    existingId?: string
-  ) => {
-    if (role !== 'admin') {
-      alert('Solo un administrador puede costear ventas.');
-      return;
-    }
-    if (existingId) {
-      await updateDoc(doc(db, PACA_RECONCILIATIONS_COLLECTION, existingId), {
-        ...data,
-        updatedByEmail: user?.email || 'desconocido',
-        updatedAt: new Date().toISOString(),
-      });
-      return;
-    }
-    const reconciliation: PacaReconciliation = {
-      ...data,
-      id: generateId(),
-      createdByEmail: user?.email || 'desconocido',
-      createdAt: new Date().toISOString(),
-    };
-    await setDoc(doc(db, PACA_RECONCILIATIONS_COLLECTION, reconciliation.id), reconciliation);
-  };
-
-  const deletePacaReconciliation = async (id: string) => {
-    if (role !== 'admin') {
-      alert('Solo un administrador puede eliminar un costeo.');
-      return;
-    }
-    await deleteDoc(doc(db, PACA_RECONCILIATIONS_COLLECTION, id));
+    await setDoc(doc(db, SETTINGS_COLLECTION, GARMENT_PRICE_DOC_ID), { entries: arrayUnion(entry) }, { merge: true });
   };
 
   const addExpenseCategory = async (id: string, label: string) => {
@@ -1564,19 +1498,9 @@ const App: React.FC = () => {
                     sales={sales}
                     expenses={expenses}
                     categories={expenseCategories}
-                    pacas={pacas}
-                    reconciliations={pacaReconciliations}
+                    garmentPrices={garmentPrices}
                     settings={financeSettings}
                     aliases={aliases}
-                  />
-                  <PacaReconciliationPanel
-                    inventory={inventory}
-                    pacas={pacas}
-                    sales={sales}
-                    reconciliations={pacaReconciliations}
-                    aliases={aliases}
-                    onSave={savePacaReconciliation}
-                    onDelete={deletePacaReconciliation}
                   />
                   <ExpensesPanel
                     expenses={expenses}
@@ -1594,7 +1518,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="space-y-6">
                   <FinanceSettingsCard settings={financeSettings} aliases={aliases} onSave={saveFinanceSettings} />
-                  <PacasPanel pacas={pacas} aliases={aliases} onRegisterPurchase={registerPacaPurchase} />
+                  <GarmentPriceCard entries={garmentPrices} aliases={aliases} onAdd={addGarmentPrice} />
                 </div>
               </div>
             )

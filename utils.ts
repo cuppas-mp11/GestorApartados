@@ -1,6 +1,6 @@
 import {
   Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
-  Paca, PacaReconciliation, Expense, ExpenseCategoryItem, ExpenseTemplate,
+  GarmentPriceEntry, Expense, ExpenseCategoryItem, ExpenseTemplate,
   UnitCostItem, FinanceSettings, LotColorSettings, LotStage, InventoryItem,
 } from './types';
 
@@ -405,96 +405,37 @@ export const isDateInRange = (dateStr: string, start: string, end: string): bool
   return d >= start && d <= end;
 };
 
-// ---- Fase 3: Catálogo de pacas, costeo manual por sticker y gastos (solo admin) ----
+// ---- Fase 3: Precio por prenda y gastos (solo admin) ----
 
-export const getNextPacaCode = (pacas: Paca[]): string => {
-  const nums = pacas.map((p) => parseInt((p.code || '').replace(/\D/g, ''), 10) || 0);
-  const last = nums.length > 0 ? Math.max(...nums) : 0;
-  return `PACA${String(last + 1).padStart(3, '0')}`;
+// Precio por prenda vigente en una fecha: el de la entrada más reciente cuya
+// fecha de vigencia sea igual o anterior a ese día. Si la fecha es anterior a
+// TODAS las entradas, se usa la más antigua (así reportes de días previos al
+// primer registro no salen en cero). Sin ninguna entrada, devuelve 0.
+export const getGarmentPriceForDate = (entries: GarmentPriceEntry[], dateStr: string): number => {
+  if (!entries || entries.length === 0) return 0;
+  const day = getLocalDateStr(dateStr);
+  const sorted = [...entries].sort(
+    (a, b) => a.effectiveDate.localeCompare(b.effectiveDate) || a.createdAt.localeCompare(b.createdAt)
+  );
+  let current = sorted[0];
+  for (const e of sorted) {
+    if (e.effectiveDate <= day) current = e;
+  }
+  return current.price || 0;
 };
 
-// Busca una paca YA existente con el MISMO precio y la MISMA cantidad (mismas
-// características = mismo costo unitario), para no crear un código nuevo cada
-// vez que se vuelve a comprar "la misma" paca — se le agrega la fecha a su
-// historial de compras en vez de duplicarla.
-export const findMatchingPaca = (pacas: Paca[], balePrice: number, quantity: number): Paca | undefined =>
-  pacas.find((p) => amountsMatch(p.balePrice, balePrice) && p.quantity === quantity);
-
-// Fecha de la compra más reciente de una paca (puede tener varias si se ha
-// vuelto a comprar con las mismas características).
-export const getLatestPurchaseDate = (paca: Paca): string | undefined => {
-  if (!paca.purchases || paca.purchases.length === 0) return undefined;
-  return [...paca.purchases].sort((a, b) => b.date.localeCompare(a.date))[0].date;
-};
-
-export const sortPacasByLatestPurchase = (pacas: Paca[]): Paca[] =>
-  [...pacas].sort((a, b) => (getLatestPurchaseDate(b) || '').localeCompare(getLatestPurchaseDate(a) || ''));
-
-// Cantidad vendida de un código de prenda dentro de un conjunto de ventas.
-export const getSoldQuantityForCode = (sales: Sale[], code: string): number =>
-  sales.reduce((acc, s) => acc + s.items.filter((it) => it.code === code).reduce((a, it) => a + it.quantity, 0), 0);
-
-export const getDistinctCodesSold = (sales: Sale[]): string[] =>
-  Array.from(new Set(sales.flatMap((s) => s.items.map((it) => it.code))));
-
-// Reconciliaciones (costeos) cuyo rango de fechas cae COMPLETO dentro del rango
-// que se está revisando — si una reconciliación se sale del rango (ej. costeó
-// una semana que cruza de un mes a otro), no se cuenta aquí para evitar mezclar
-// periodos a medias. Conviene costear usando cortes de fecha compatibles con
-// cómo luego se revisa la rentabilidad (ej. por semana completa, o por mes).
-export const getReconciliationsInRange = (
-  reconciliations: PacaReconciliation[],
-  start: string,
-  end: string
-): PacaReconciliation[] =>
-  reconciliations.filter((r) => r.startDate >= start && r.endDate <= end);
-
-export interface CodeCostBreakdown {
-  code: string;
-  soldQuantity: number;
-  costedQuantity: number;
-  pendingQuantity: number;
-  costedTotal: number; // Q, solo de la parte ya costeada
-}
-
-// Para cada código de prenda vendido en el rango, cuánto ya se costeó (según
-// las reconciliaciones admin con sticker) y cuánto sigue pendiente. El costo
-// de lo pendiente NO se estima — se deja fuera de la ganancia y se muestra
-// aparte, para no mezclar un número exacto con uno adivinado.
-export const getCostBreakdownByCode = (
-  sales: Sale[],
-  reconciliations: PacaReconciliation[],
-  pacas: Paca[],
-  start: string,
-  end: string
-): CodeCostBreakdown[] => {
-  const inRangeRecon = getReconciliationsInRange(reconciliations, start, end);
-  const pacaById = new Map(pacas.map((p) => [p.id, p]));
-
-  return getDistinctCodesSold(sales).map((code) => {
-    const soldQuantity = getSoldQuantityForCode(sales, code);
-    let costedQuantity = 0;
-    let costedTotal = 0;
-    inRangeRecon
-      .filter((r) => r.code === code)
-      .forEach((r) => {
-        r.allocations.forEach((a) => {
-          costedQuantity += a.quantity;
-          costedTotal += a.quantity * (pacaById.get(a.pacaId)?.unitCost || 0);
-        });
-      });
-
-    // Nunca mostrar más prendas "costeadas" que las realmente vendidas en el
-    // rango (por si una venta se editó/anuló después de haber costeado).
-    const cappedCosted = Math.min(costedQuantity, soldQuantity);
-    return {
-      code,
-      soldQuantity,
-      costedQuantity: cappedCosted,
-      pendingQuantity: Math.max(0, soldQuantity - cappedCosted),
-      costedTotal: cappedCosted < costedQuantity ? costedTotal * (cappedCosted / Math.max(costedQuantity, 1)) : costedTotal,
-    };
-  });
+// Entrada vigente HOY (la que se muestra como "precio actual").
+export const getCurrentGarmentPriceEntry = (entries: GarmentPriceEntry[]): GarmentPriceEntry | undefined => {
+  if (!entries || entries.length === 0) return undefined;
+  const today = getLocalDateStr();
+  const sorted = [...entries].sort(
+    (a, b) => a.effectiveDate.localeCompare(b.effectiveDate) || a.createdAt.localeCompare(b.createdAt)
+  );
+  let current = sorted[0];
+  for (const e of sorted) {
+    if (e.effectiveDate <= today) current = e;
+  }
+  return current;
 };
 
 export const getExpenseCategoryLabel = (categoryId: string, categories: ExpenseCategoryItem[]): string =>
@@ -535,7 +476,7 @@ export const getDistinctSellerEmails = (sales: Sale[]): string[] =>
 // Desglose completo de rentabilidad para un conjunto de ventas (puede ser todas
 // las del negocio en un rango, o solo las de una vendedora). Sigue el mismo
 // orden que el Excel de la tienda:
-//   Ingresos → costo de paca (solo lo ya costeado por sticker) → costos por
+//   Ingresos → precio por prenda (el vigente el día de cada venta) → costos por
 //   prenda → comisión de tarjeta → IVA de factura (tarjeta + transferencia) →
 //   Ganancia neta → comisión de vendedora.
 // Los gastos fijos/variables del periodo (Expenses) NO se incluyen aquí — se
@@ -543,15 +484,13 @@ export const getDistinctSellerEmails = (sales: Sale[]): string[] =>
 export interface ProfitabilityBreakdown {
   revenue: number;
   itemsSold: number;
-  itemsCosted: number; // prendas vendidas que ya tienen paca asignada (costeadas)
-  itemsPending: number; // prendas vendidas sin costear todavía (no se les estima costo)
-  cogsPaca: number; // costo de paca, solo de las prendas costeadas
+  cogsGarment: number; // precio por prenda × prendas vendidas (con el precio vigente en la fecha de cada venta)
   cogsUnitCosts: number; // planchado/empaque/etc., aplica a TODAS las prendas vendidas
   cardTotal: number;
   transferTotal: number;
   cardFee: number;
   invoiceTax: number;
-  grossProfitAfterCogs: number; // revenue - cogsPaca - cogsUnitCosts
+  grossProfitAfterCogs: number; // revenue - cogsGarment - cogsUnitCosts
   netProfit: number; // grossProfitAfterCogs - cardFee - invoiceTax ("ganancia neta", base de la comisión)
   vendorCommission: number;
   profitAfterCommission: number; // netProfit - vendorCommission
@@ -559,26 +498,20 @@ export interface ProfitabilityBreakdown {
 
 export const calculateProfitability = (
   sales: Sale[],
-  pacas: Paca[],
-  reconciliations: PacaReconciliation[],
-  settings: FinanceSettings,
-  start: string,
-  end: string
+  garmentPrices: GarmentPriceEntry[],
+  settings: FinanceSettings
 ): ProfitabilityBreakdown => {
   const revenue = sales.reduce((acc, s) => acc + getSaleTotal(s), 0);
   const itemsSold = sales.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
 
-  const byCode = getCostBreakdownByCode(sales, reconciliations, pacas, start, end);
-  const cogsPaca = byCode.reduce((acc, c) => acc + c.costedTotal, 0);
-  const itemsCosted = byCode.reduce((acc, c) => acc + c.costedQuantity, 0);
-  const itemsPending = byCode.reduce((acc, c) => acc + c.pendingQuantity, 0);
+  const cogsGarment = sales.reduce((acc, s) => acc + getSaleItemsCount(s) * getGarmentPriceForDate(garmentPrices, s.date), 0);
 
   const cogsUnitCosts = itemsSold * getUnitCostsTotal(settings.unitCosts || []);
   const cardTotal = getPaymentMethodTotal(sales, 'card');
   const transferTotal = getPaymentMethodTotal(sales, 'transfer');
   const cardFee = cardTotal * ((settings.cardCommissionPercent || 0) / 100);
   const invoiceTax = (cardTotal + transferTotal) * ((settings.invoiceTaxPercent || 0) / 100);
-  const grossProfitAfterCogs = revenue - cogsPaca - cogsUnitCosts;
+  const grossProfitAfterCogs = revenue - cogsGarment - cogsUnitCosts;
   const netProfit = grossProfitAfterCogs - cardFee - invoiceTax;
   // No se paga comisión sobre una pérdida — si el periodo cerró en negativo, la
   // comisión de la vendedora es Q0, no un número negativo.
@@ -588,9 +521,7 @@ export const calculateProfitability = (
   return {
     revenue,
     itemsSold,
-    itemsCosted,
-    itemsPending,
-    cogsPaca,
+    cogsGarment,
     cogsUnitCosts,
     cardTotal,
     transferTotal,
@@ -612,15 +543,12 @@ export interface SellerCommission {
 // de cada venta), para pagar la comisión de cada quien según lo que ella vendió.
 export const calculateCommissionsBySeller = (
   sales: Sale[],
-  pacas: Paca[],
-  reconciliations: PacaReconciliation[],
-  settings: FinanceSettings,
-  start: string,
-  end: string
+  garmentPrices: GarmentPriceEntry[],
+  settings: FinanceSettings
 ): SellerCommission[] =>
   getDistinctSellerEmails(sales)
     .map((email) => ({
       email,
-      breakdown: calculateProfitability(sales.filter((s) => s.soldByEmail === email), pacas, reconciliations, settings, start, end),
+      breakdown: calculateProfitability(sales.filter((s) => s.soldByEmail === email), garmentPrices, settings),
     }))
     .sort((a, b) => b.breakdown.revenue - a.breakdown.revenue);
