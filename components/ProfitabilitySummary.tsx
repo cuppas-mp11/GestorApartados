@@ -13,6 +13,7 @@ import {
   calculateCommissionsBySeller,
   getExpenseCategoryLabel,
   getDisplayName,
+  getGarmentPriceForDate,
 } from '../utils';
 
 interface ProfitabilitySummaryProps {
@@ -44,6 +45,15 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
   const expensesTotal = getExpensesTotal(rangeExpenses);
   const finalProfit = breakdown.profitAfterCommission - expensesTotal;
 
+  // Precio(s) por prenda usados en este rango (normalmente uno; varios si el precio cambió dentro del periodo)
+  const pricesUsed = Array.from(new Set(rangeSales.map((s) => getGarmentPriceForDate(garmentPrices, s.date))));
+  const garmentPriceSub =
+    garmentPrices.length === 0
+      ? 'Sin precio registrado'
+      : pricesUsed.length <= 1
+        ? `${formatCurrency(pricesUsed[0] ?? getGarmentPriceForDate(garmentPrices, end))} × ${breakdown.itemsSold} prenda(s)`
+        : `Precio cambió en el periodo (${pricesUsed.map((x) => formatCurrency(x)).join(', ')}) · ${breakdown.itemsSold} prenda(s)`;
+
   const bySeller = calculateCommissionsBySeller(rangeSales, garmentPrices, settings);
 
   const exportExcel = () => {
@@ -54,8 +64,8 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
     rows.push(['Concepto', 'Monto (Q)']);
     rows.push(['Ingresos por ventas', breakdown.revenue]);
     rows.push(['Prendas vendidas', breakdown.itemsSold]);
-    rows.push(['Costo de prendas (precio por prenda × prendas vendidas)', -breakdown.cogsGarment]);
-    rows.push(['Costos por prenda (planchado, empaque, etc.)', -breakdown.cogsUnitCosts]);
+    rows.push(['Costo de la ropa (precio por prenda × prendas vendidas)', -breakdown.cogsGarment]);
+    rows.push(['Preparación y empaque por prenda (planchado, bolsa, etc.)', -breakdown.cogsUnitCosts]);
     rows.push(['Total pagado con tarjeta', breakdown.cardTotal]);
     rows.push([`Comisión de tarjeta (${settings.cardCommissionPercent}%)`, -breakdown.cardFee]);
     rows.push(['Total pagado con transferencia/depósito', breakdown.transferTotal]);
@@ -122,11 +132,11 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
       <div className="space-y-1.5 mb-5">
         <Row label="Ingresos por ventas" value={breakdown.revenue} sub={`${rangeSales.length} venta(s) · ${breakdown.itemsSold} prenda(s)`} positive />
         <Row
-          label="Costo de prendas"
+          label="Costo de la ropa (lo que se pagó por ella)"
           value={-breakdown.cogsGarment}
-          sub={`Precio por prenda × ${breakdown.itemsSold} prenda(s) vendida(s)`}
+          sub={garmentPriceSub}
         />
-        <Row label="Costos por prenda" value={-breakdown.cogsUnitCosts} sub={`${formatCurrency(unitCostsExtra)} × ${breakdown.itemsSold}`} />
+        <Row label="Preparación y empaque por prenda" value={-breakdown.cogsUnitCosts} sub={`${formatCurrency(unitCostsExtra)} × ${breakdown.itemsSold}`} />
         <Row label="Comisión de tarjeta" value={-breakdown.cardFee} sub={`${settings.cardCommissionPercent || 0}% de ${formatCurrency(breakdown.cardTotal)}`} />
         <Row label="IVA de factura" value={-breakdown.invoiceTax} sub={`${settings.invoiceTaxPercent || 0}% de ${formatCurrency(breakdown.cardTotal + breakdown.transferTotal)} (tarjeta + transf.)`} />
         <Row label="Ganancia neta" value={breakdown.netProfit} bold divider />
