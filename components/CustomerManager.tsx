@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { confirmDialog } from './ConfirmDialog';
 import { Customer, CreditTransaction, UserRole } from '../types';
 import { formatCurrency, formatDate, getCustomerCredit } from '../utils';
 
@@ -146,7 +147,7 @@ export const CustomerManager: React.FC<CustomerManagerProps> = ({ customers, cre
                               Editar
                             </button>
                             <button
-                              onClick={() => { if (confirm(`¿Quitar a ${c.name} de la libreta de clientes? Sus apartados anteriores no se verán afectados.`)) onDelete(c.id); }}
+                              onClick={async () => { if (await confirmDialog(`¿Quitar a ${c.name} de la libreta de clientes? Sus apartados anteriores no se verán afectados.`, { danger: true, confirmLabel: 'Quitar' })) onDelete(c.id); }}
                               className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] p-2 rounded-full hover:bg-[#8c3a4b]/10 transition text-xs font-bold"
                             >
                               Quitar

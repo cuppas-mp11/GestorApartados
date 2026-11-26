@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import * as XLSX from 'xlsx';
+import { downloadStyledExcel, Cell } from '../excelStyle';
 import { Sale, SaleStatus, UserRole } from '../types';
 import { formatDate, formatCurrency, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getDisplayName, isSameLocalDay, getLocalDateStr, isDateInRange } from '../utils';
 
@@ -58,30 +58,47 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onE
   const hasRange = !!start || !!end;
   const isActive = (s: string, e: string) => start === s && end === e;
 
-  const exportExcel = () => {
-    const rows: (string | number)[][] = [
-      ['Vestimenta GT — Historial de ventas'],
-      [hasRange ? `Del ${start ? formatDate(start) : 'inicio'} al ${end ? formatDate(end) : 'hoy'}` : 'Todas las fechas'],
-      [],
-      ['#', 'Fecha', 'Vendió', 'Prendas', 'Pago(s)', 'Total (Q)', 'Estado'],
-    ];
-    [...filtered].sort((a, b) => a.correlative - b.correlative).forEach((s) =>
-      rows.push([
+  const exportExcel = async () => {
+    const sorted = [...filtered].sort((a, b) => a.correlative - b.correlative);
+    const cancelledIdx: number[] = [];
+    const rows: Cell[][] = sorted.map((s, i) => {
+      if (s.status === SaleStatus.CANCELLED) cancelledIdx.push(i);
+      return [
         s.correlative,
         formatDate(s.date),
         getDisplayName(s.soldByEmail, aliases),
-        s.items.map((i) => `${i.quantity}x ${i.code} ${i.name}`).join(' | '),
-        s.payments.map((p) => `${paymentMethodLabel(p.method)} ${p.amount.toFixed(2)}`).join(' + '),
+        s.items.map((it) => `${it.quantity}x ${it.code} ${it.name}`).join('\n'),
+        s.payments.map((p) => `${paymentMethodLabel(p.method)} ${formatCurrency(p.amount)}`).join('\n'),
         getSaleTotal(s),
-        s.status === SaleStatus.CANCELLED ? 'Anulada' : 'Completada',
-      ])
-    );
-    rows.push([]);
-    rows.push(['', '', '', '', 'TOTAL (sin anuladas)', rangeTotal]);
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Historial');
-    XLSX.writeFile(wb, `Historial_ventas_${start || 'inicio'}_a_${end || today}.xlsx`);
+        s.status === SaleStatus.CANCELLED ? 'ANULADA' : 'COMPLETADA',
+      ];
+    });
+    await downloadStyledExcel(`Historial_ventas_${start || 'inicio'}_a_${end || today}.xlsx`, [
+      {
+        name: 'Historial',
+        title: 'Historial de ventas',
+        subtitle: hasRange ? `Del ${start ? formatDate(start) : 'inicio'} al ${end ? formatDate(end) : 'hoy'}` : 'Todas las fechas',
+        widths: [8, 22, 18, 42, 30, 14, 14],
+        landscape: true,
+        freezeHeader: true,
+        sections: [
+          {
+            columns: [
+              { header: '#', type: 'center' },
+              { header: 'Fecha' },
+              { header: 'Vendió' },
+              { header: 'Prendas' },
+              { header: 'Pago(s)' },
+              { header: 'Total', type: 'money' },
+              { header: 'Estado', type: 'center' },
+            ],
+            rows,
+            cancelledRows: cancelledIdx,
+            total: ['', 'TOTAL (sin anuladas)', '', `${rangeItems} prenda(s)`, `${completed.length} venta(s)`, rangeTotal, ''],
+          },
+        ],
+      },
+    ]);
   };
 
   const chip = (active: boolean) =>
@@ -104,11 +121,11 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onE
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Desde</label>
-            <input type="date" className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold" value={start} max={end || today} onChange={(e) => setStart(e.target.value)} />
+            <input type="date" className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-normal text-slate-600" value={start} max={end || today} onChange={(e) => setStart(e.target.value)} />
           </div>
           <div>
             <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Hasta</label>
-            <input type="date" className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold" value={end} min={start || undefined} max={today} onChange={(e) => setEnd(e.target.value)} />
+            <input type="date" className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-normal text-slate-600" value={end} min={start || undefined} max={today} onChange={(e) => setEnd(e.target.value)} />
           </div>
           <div className="flex flex-wrap gap-1.5">
             <button onClick={setToday} className={chip(isActive(today, today))}>Hoy</button>

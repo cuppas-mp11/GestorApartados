@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import * as XLSX from 'xlsx';
+import { downloadStyledExcel, Cell } from '../excelStyle';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Reservation, ReservationStatus } from '../types';
@@ -42,34 +42,51 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ reservations }) => {
     setIsOpen(false);
   };
 
-  const exportToExcel = (data: Reservation[]) => {
+  const exportToExcel = async (data: Reservation[]) => {
     const fileName = `Reporte_Apartados_${filterType}_${getLocalDateStr()}.xlsx`;
+    const statusLabel = (r: Reservation) =>
+      r.status === ReservationStatus.PENDING ? 'PENDIENTE' : r.status === ReservationStatus.PAID ? 'LIQUIDADO' : 'LIBERADO';
 
-    const rows = data.map(res => {
-      const total = getTotalPrice(res);
-      const paid = getTotalPaid(res);
-      const balance = getBalance(res);
-      const itemsList = res.items.map(it => `${it.code} (${it.quantity})`).join(', ');
+    const rows: Cell[][] = data.map((res) => [
+      res.correlative,
+      res.customerCode,
+      res.customerName,
+      res.phoneNumber,
+      formatDate(res.date),
+      res.items.map((it) => `${it.code} (${it.quantity})`).join(', '),
+      statusLabel(res),
+      getTotalPrice(res),
+      getTotalPaid(res),
+      getBalance(res),
+    ]);
 
-      return {
-        'Correlativo': res.correlative,
-        'Código Cliente': res.customerCode,
-        'Nombre Cliente': res.customerName,
-        'Teléfono': res.phoneNumber,
-        'Fecha': formatDate(res.date),
-        'Prendas': itemsList,
-        'Estado': res.status === ReservationStatus.PENDING ? 'PENDIENTE' :
-                  res.status === ReservationStatus.PAID ? 'LIQUIDADO' : 'LIBERADO',
-        'Total (Q)': total,
-        'Pagado (Q)': paid,
-        'Saldo (Q)': balance
-      };
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Apartados');
-    XLSX.writeFile(workbook, fileName);
+    await downloadStyledExcel(fileName, [
+      {
+        name: 'Apartados',
+        title: `Reporte de Apartados — ${filterType === 'PENDING' ? 'Pendientes' : filterType === 'MONTH' ? `Mes ${selectedMonth}` : 'Historial completo'}`,
+        widths: [11, 14, 26, 13, 22, 34, 14, 14, 14, 14],
+        landscape: true,
+        freezeHeader: true,
+        sections: [
+          {
+            columns: [
+              { header: 'Correlativo', type: 'center' },
+              { header: 'Código', type: 'center' },
+              { header: 'Cliente' },
+              { header: 'Teléfono', type: 'center' },
+              { header: 'Fecha' },
+              { header: 'Prendas' },
+              { header: 'Estado', type: 'center' },
+              { header: 'Total', type: 'money' },
+              { header: 'Pagado', type: 'money' },
+              { header: 'Saldo', type: 'money' },
+            ],
+            rows,
+            total: ['', '', `${data.length} apartado(s)`, '', '', '', '', data.reduce((a, r) => a + getTotalPrice(r), 0), data.reduce((a, r) => a + getTotalPaid(r), 0), data.reduce((a, r) => a + getBalance(r), 0)],
+          },
+        ],
+      },
+    ]);
   };
 
   const exportToPDF = (data: Reservation[]) => {

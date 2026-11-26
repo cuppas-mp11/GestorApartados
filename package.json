@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "firebase": "^10.13.0",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",

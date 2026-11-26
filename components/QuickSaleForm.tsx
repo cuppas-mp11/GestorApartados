@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { confirmDialog } from './ConfirmDialog';
 import { InventoryItem, Lot, Customer, Sale, SaleItem, SalePayment, PaymentMethod, LotColorSettings, LotStage } from '../types';
 import { generateId, formatCurrency, getStockForCode, paymentMethodLabel, amountsMatch, PAYMENT_METHODS, getCandidateLotsForCode, getEffectivePriceForLot, getLotStage, getStageInfo, getLotColorStyle } from '../utils';
 import { CreditCustomerPicker } from './CreditCustomerPicker';
@@ -309,8 +310,8 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
   const pendingCount = rows.filter((r) => r.garmentId !== '').length;
   const hasPending = pendingCount > 0 || note.trim() !== '';
 
-  const discardSale = () => {
-    if (!window.confirm('¿Descartar esta venta? Se borrarán todas las prendas que agregaste.')) return;
+  const discardSale = async () => {
+    if (!(await confirmDialog('¿Descartar esta venta? Se borrarán todas las prendas que agregaste.', { danger: true, confirmLabel: 'Descartar' }))) return;
     setRows([emptyRow()]);
     setNote('');
     setError('');

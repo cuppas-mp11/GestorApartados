@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { confirmDialog } from './ConfirmDialog';
 import { Expense, ExpenseCategoryItem, ExpenseFrequency, ExpenseTemplate } from '../types';
 import { formatCurrency, formatDate, getLocalDateStr, getDisplayName, generateId, getExpenseCategoryLabel, getCurrentMonthStr, isTemplateConfirmedForMonth } from '../utils';
 
@@ -157,7 +158,7 @@ export const ExpensesPanel: React.FC<ExpensesPanelProps> = ({
                 )}
                 {!confirmed && (
                   <button
-                    onClick={() => { if (confirm('¿Desactivar esta plantilla? El historial de gastos que ya generó no se borra.')) onToggleTemplateActive(t.id, false); }}
+                    onClick={async () => { if (await confirmDialog('¿Desactivar esta plantilla? El historial de gastos que ya generó no se borra.', { confirmLabel: 'Desactivar' })) onToggleTemplateActive(t.id, false); }}
                     className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] text-[10px] px-1 ml-2 shrink-0"
                   >
                     ✕
@@ -321,7 +322,7 @@ export const ExpensesPanel: React.FC<ExpensesPanelProps> = ({
               <div className="flex items-center gap-2 shrink-0">
                 <span className="font-black text-[#8c3a4b]">{formatCurrency(exp.amount)}</span>
                 <button onClick={() => startEdit(exp)} className="text-[#2bb297] hover:text-[#1a8a72] text-[10px] font-black uppercase px-1">Editar</button>
-                <button onClick={() => { if (confirm('¿Eliminar este gasto?')) onDeleteExpense(exp.id); }} className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] px-1">✕</button>
+                <button onClick={async () => { if (await confirmDialog('¿Eliminar este gasto?', { danger: true, confirmLabel: 'Eliminar' })) onDeleteExpense(exp.id); }} className="text-[#8c3a4b]/60 hover:text-[#8c3a4b] px-1">✕</button>
               </div>
             </div>
           ))}

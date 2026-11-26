@@ -44,6 +44,7 @@ import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
 import { GarmentPriceCard } from './components/GarmentPriceCard';
+import { ConfirmHost, confirmDialog } from './components/ConfirmDialog';
 import { ExpensesPanel } from './components/ExpensesPanel';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
 import { ProfitabilitySummary } from './components/ProfitabilitySummary';
@@ -586,7 +587,7 @@ const App: React.FC = () => {
       }
     }
 
-    if (!confirm(`¿Confirmas que deseas ${label}?`)) return;
+    if (!(await confirmDialog(`¿Confirmas que deseas ${label}?`, { danger: status === ReservationStatus.CANCELLED }))) return;
 
     if (status === ReservationStatus.CANCELLED && res) {
       try {
@@ -622,7 +623,7 @@ const App: React.FC = () => {
       alert('Solo un administrador puede eliminar registros.');
       return;
     }
-    if (!confirm('¿Estás seguro de que deseas eliminar este registro? Pasará al historial de eliminados.')) return;
+    if (!(await confirmDialog('¿Estás seguro de que deseas eliminar este registro? Pasará al historial de eliminados.', { danger: true, confirmLabel: 'Eliminar' }))) return;
 
     const res = reservations.find((r) => r.id === id);
     const updates: Record<string, unknown> = {
@@ -830,7 +831,7 @@ const App: React.FC = () => {
       alert('Solo un administrador puede anular una venta.');
       return;
     }
-    if (!confirm('¿Confirmas que deseas anular esta venta? El stock vendido regresará al inventario y, si se pagó con saldo, se le devolverá a la clienta.')) return;
+    if (!(await confirmDialog('¿Confirmas que deseas anular esta venta? El stock vendido regresará al inventario y, si se pagó con saldo, se le devolverá a la clienta.', { danger: true, confirmLabel: 'Anular venta' }))) return;
 
     const sale = sales.find((s) => s.id === id);
     if (!sale || sale.status === SaleStatus.CANCELLED) return;
@@ -1281,6 +1282,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#e8f7f2] lg:flex">
+      <ConfirmHost />
       <Sidebar page={page} setPage={setPage} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex-1 min-w-0">

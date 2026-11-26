@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import * as XLSX from 'xlsx';
+import { downloadStyledExcel, SheetSpec, Cell } from '../excelStyle';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Sale, SaleStatus, PaymentMethod } from '../types';
@@ -141,94 +141,138 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales, aliases
     doc.save(`Reporte_Ventas_${day}.pdf`);
   };
 
-  const exportDayToExcel = (data: Sale[]) => {
+  const exportDayToExcel = async (data: Sale[]) => {
     const completed = data.filter((s) => s.status === SaleStatus.COMPLETED);
     const totalDia = completed.reduce((acc, s) => acc + getSaleTotal(s), 0);
     const itemsDia = completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
     const discountDia = completed.reduce((acc, s) => acc + s.items.reduce((a, it) => a + (it.discount || 0), 0), 0);
     const dailySeq = getDailySequenceMap(data);
+    const title = `Reporte de Ventas — ${formatDate(day)}`;
 
-    const rows: (string | number)[][] = [];
-    rows.push(['Vestimenta GT']);
-    rows.push([`Reporte de Ventas — ${formatDate(day)}`]);
-    rows.push([]);
+    // ---- Hoja 1: Resumen (métodos de pago + cifras clave, como el PDF) ----
+    const methodRows: Cell[][] = PAYMENT_METHODS
+      .map((m) => [m.label, methodTotal(data, m.value)] as Cell[])
+      .filter((row) => (row[1] as number) > 0);
 
-    // ---- Resumen por método de pago, con su total al final ----
-    rows.push(['Método de pago', 'Total']);
-    PAYMENT_METHODS.forEach((m) => {
-      const total = methodTotal(data, m.value);
-      if (total > 0) rows.push([m.label, total]);
-    });
-    rows.push(['TOTAL', totalDia]);
-    rows.push([]);
+    const resumen: SheetSpec = {
+      name: 'Resumen',
+      title,
+      widths: [26, 18],
+      sections: [
+        {
+          heading: 'Total por método de pago',
+          columns: [{ header: 'Método de pago' }, { header: 'Total', type: 'money' }],
+          rows: methodRows.length > 0 ? methodRows : [['Sin ventas completadas', 0]],
+          total: ['TOTAL', totalDia],
+        },
+        {
+          heading: 'Cifras del día',
+          columns: [{ header: 'Concepto' }, { header: 'Valor', type: 'int' }],
+          rows: [
+            ['Ventas completadas', completed.length],
+            ['Prendas vendidas', itemsDia],
+            ['Descuentos aplicados', { v: discountDia, type: 'money' }],
+            ['Ventas anuladas', data.length - completed.length],
+          ],
+        },
+      ],
+    };
 
-    // ---- Detalle de ventas, con Prenda, Precio y Cantidad en columnas separadas ----
-    rows.push(['#', 'Prenda', 'Precio (Q)', 'Cantidad', 'Método(s) de pago', 'Descuento (Q)', 'Total (Q)', 'Vendió', 'Estado']);
+    // ---- Hoja 2: Detalle, con Prenda, Precio y Cantidad en columnas separadas ----
+    const detailRows: Cell[][] = [];
+    const cancelledIdx: number[] = [];
     data.forEach((s) => {
       const cancelled = s.status === SaleStatus.CANCELLED;
       const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
       s.items.forEach((it, idx) => {
-        rows.push([
+        if (cancelled) cancelledIdx.push(detailRows.length);
+        detailRows.push([
           idx === 0 ? (dailySeq.get(s.id) ?? '') : '',
           `${it.code} - ${it.name}`,
           it.pricePerUnit,
           it.quantity,
           idx === 0 ? s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join(' / ') : '',
-          idx === 0 ? discount : '',
-          idx === 0 ? getSaleTotal(s) : '',
+          idx === 0 ? (discount > 0 ? discount : null) : null,
+          idx === 0 ? getSaleTotal(s) : null,
           idx === 0 ? getDisplayName(s.soldByEmail, aliases) : '',
           idx === 0 ? (cancelled ? 'ANULADA' : 'COMPLETADA') : '',
         ]);
       });
     });
 
-    // Fila de totales, cada dato bajo su columna correspondiente.
-    // "Precio (Q)" y "Vendió" quedan en blanco: son solo informativas.
-    rows.push(['', 'TOTAL DEL DÍA', '', itemsDia, `${completed.length} venta(s)`, discountDia, totalDia, '', '']);
+    const detalle: SheetSpec = {
+      name: 'Detalle',
+      title,
+      widths: [8, 36, 13, 10, 34, 14, 14, 18, 14],
+      landscape: true,
+      freezeHeader: true,
+      sections: [
+        {
+          columns: [
+            { header: '#', type: 'center' },
+            { header: 'Prenda' },
+            { header: 'Precio', type: 'money' },
+            { header: 'Cantidad', type: 'int' },
+            { header: 'Método(s) de pago' },
+            { header: 'Descuento', type: 'money' },
+            { header: 'Total', type: 'money' },
+            { header: 'Vendió' },
+            { header: 'Estado', type: 'center' },
+          ],
+          rows: detailRows,
+          cancelledRows: cancelledIdx,
+          // "Precio" y "Vendió" quedan en blanco: son solo informativas.
+          total: ['', 'TOTAL DEL DÍA', null, itemsDia, `${completed.length} venta(s)`, discountDia, totalDia, '', ''],
+        },
+      ],
+    };
 
-    const worksheet = XLSX.utils.aoa_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Ventas');
-    XLSX.writeFile(workbook, `Reporte_Ventas_${day}.xlsx`);
+    await downloadStyledExcel(`Reporte_Ventas_${day}.xlsx`, [resumen, detalle]);
   };
 
-  const exportRangeToExcel = () => {
+  const exportRangeToExcel = async () => {
     const dates = dateListBetween(rangeStart, rangeEnd);
-    const rows = dates.map((dateStr) => {
+    const rows: Cell[][] = [];
+    const totals = { ventas: 0, prendas: 0, descuentos: 0, total: 0, methods: PAYMENT_METHODS.map(() => 0) };
+
+    dates.forEach((dateStr) => {
       const daySales = salesForDay(dateStr);
       const completed = daySales.filter((s) => s.status === SaleStatus.COMPLETED);
-      const totalDiscount = completed.reduce((acc, s) => acc + s.items.reduce((a, it) => a + (it.discount || 0), 0), 0);
-      const row: Record<string, string | number> = {
-        'Fecha': formatDate(dateStr),
-        '# Ventas': completed.length,
-        '# Prendas': completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0),
-      };
-      PAYMENT_METHODS.forEach((m) => {
-        row[m.label] = methodTotal(daySales, m.value);
-      });
-      row['Descuentos (Q)'] = totalDiscount;
-      row['Total del día (Q)'] = completed.reduce((acc, s) => acc + getSaleTotal(s), 0);
-      return row;
+      const discount = completed.reduce((acc, s) => acc + s.items.reduce((a, it) => a + (it.discount || 0), 0), 0);
+      const prendas = completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
+      const total = completed.reduce((acc, s) => acc + getSaleTotal(s), 0);
+      const methodVals = PAYMENT_METHODS.map((m) => methodTotal(daySales, m.value));
+      totals.ventas += completed.length;
+      totals.prendas += prendas;
+      totals.descuentos += discount;
+      totals.total += total;
+      methodVals.forEach((v, i) => { totals.methods[i] += v; });
+      rows.push([formatDate(dateStr), completed.length, prendas, ...methodVals, discount, total]);
     });
 
-    // Fila de totales al final, para que la admin vea el acumulado del rango de un vistazo.
-    const totalsRow: Record<string, string | number> = { 'Fecha': 'TOTAL DEL RANGO', '# Ventas': 0, '# Prendas': 0 };
-    PAYMENT_METHODS.forEach((m) => { totalsRow[m.label] = 0; });
-    totalsRow['Descuentos (Q)'] = 0;
-    totalsRow['Total del día (Q)'] = 0;
-    rows.forEach((r) => {
-      totalsRow['# Ventas'] = (totalsRow['# Ventas'] as number) + (r['# Ventas'] as number);
-      totalsRow['# Prendas'] = (totalsRow['# Prendas'] as number) + (r['# Prendas'] as number);
-      PAYMENT_METHODS.forEach((m) => { totalsRow[m.label] = (totalsRow[m.label] as number) + (r[m.label] as number); });
-      totalsRow['Descuentos (Q)'] = (totalsRow['Descuentos (Q)'] as number) + (r['Descuentos (Q)'] as number);
-      totalsRow['Total del día (Q)'] = (totalsRow['Total del día (Q)'] as number) + (r['Total del día (Q)'] as number);
-    });
-    rows.push(totalsRow);
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Ventas por día');
-    XLSX.writeFile(workbook, `Reporte_Ventas_${rangeStart}_a_${rangeEnd}.xlsx`);
+    const sheet: SheetSpec = {
+      name: 'Ventas por día',
+      title: 'Reporte de Ventas por rango',
+      subtitle: `Del ${formatDate(rangeStart)} al ${formatDate(rangeEnd)}`,
+      widths: [26, 11, 11, ...PAYMENT_METHODS.map(() => 14), 15, 17],
+      landscape: true,
+      freezeHeader: true,
+      sections: [
+        {
+          columns: [
+            { header: 'Fecha' },
+            { header: '# Ventas', type: 'int' },
+            { header: '# Prendas', type: 'int' },
+            ...PAYMENT_METHODS.map((m) => ({ header: m.label, type: 'money' as const })),
+            { header: 'Descuentos', type: 'money' },
+            { header: 'Total del día', type: 'money' },
+          ],
+          rows,
+          total: ['TOTAL DEL RANGO', totals.ventas, totals.prendas, ...totals.methods, totals.descuentos, totals.total],
+        },
+      ],
+    };
+    await downloadStyledExcel(`Reporte_Ventas_${rangeStart}_a_${rangeEnd}.xlsx`, [sheet]);
   };
 
   return (

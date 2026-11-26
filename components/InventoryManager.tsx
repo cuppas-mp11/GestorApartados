@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { confirmDialog } from './ConfirmDialog';
 import { InventoryItem, Lot, Reservation } from '../types';
 import { generateId, formatCurrency, getStockForCode, getReservedForCode } from '../utils';
 import * as XLSX from 'xlsx';
@@ -91,8 +92,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const remove = (id: string, name: string) => {
-    if (!confirm(`¿Eliminar "${name}" del catálogo? Esto no afecta el stock ya vendido, pero no podrás registrarle más entregas ni ventas.`)) return;
+  const remove = async (id: string, name: string) => {
+    if (!(await confirmDialog(`¿Eliminar "${name}" del catálogo? Esto no afecta el stock ya vendido, pero no podrás registrarle más entregas ni ventas.`, { danger: true, confirmLabel: 'Eliminar' }))) return;
     onUpdate(items.filter(i => i.id !== id));
   };
 

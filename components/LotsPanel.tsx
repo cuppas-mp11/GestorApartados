@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { confirmDialog } from './ConfirmDialog';
 import { InventoryItem, Lot, UserRole, LotColorSettings } from '../types';
 import { getWeeksInStore, getLotAlertLevel, formatDate, getDisplayName, getLotStage, getStageInfo, getLotColorStyle } from '../utils';
 
@@ -219,7 +220,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                       })()}
                       {role === 'admin' && (
                         <button
-                          onClick={() => { if (confirm('¿Eliminar este lote?')) onDeleteLot(lot.id); }}
+                          onClick={async () => { if (await confirmDialog('¿Eliminar este lote?', { danger: true, confirmLabel: 'Eliminar' })) onDeleteLot(lot.id); }}
                           className="text-[9px] font-black underline opacity-70 hover:opacity-100"
                         >
                           Eliminar
@@ -234,7 +235,7 @@ export const LotsPanel: React.FC<LotsPanelProps> = ({ inventory, lots, role, onD
                       <div className="flex items-center justify-between">
                         <p className="text-[10px] font-black text-[#1a8a72]">✓ Confirmado por {getDisplayName(lot.verifiedByEmail, aliases)}</p>
                         <button
-                          onClick={() => { if (confirm('¿Deshacer esta confirmación? Volverá a quedar pendiente.')) onVerifyLot(lot.id, 'pending'); }}
+                          onClick={async () => { if (await confirmDialog('¿Deshacer esta confirmación? Volverá a quedar pendiente.')) onVerifyLot(lot.id, 'pending'); }}
                           className="text-[9px] font-bold underline opacity-60 hover:opacity-100"
                         >
                           Deshacer

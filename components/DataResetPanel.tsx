@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { confirmDialog } from './ConfirmDialog';
 
 export interface ResetCollectionOption {
   key: string;
@@ -46,11 +47,12 @@ export const DataResetPanel: React.FC<DataResetPanelProps> = ({ busy, onReset })
 
   const toggle = (key: string) => setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return;
     const names = RESET_OPTIONS.filter((o) => selected.includes(o.key)).map((o) => o.label).join(', ');
-    const ok = confirm(
-      `Vas a borrar PERMANENTEMENTE: ${names}.\n\nEsto no se puede deshacer. ¿Seguro que quieres continuar?`
+    const ok = await confirmDialog(
+      `Vas a borrar PERMANENTEMENTE: ${names}.\n\nEsto no se puede deshacer. ¿Seguro que quieres continuar?`,
+      { danger: true, confirmLabel: 'Borrar todo' }
     );
     if (!ok) return;
     onReset(selected);

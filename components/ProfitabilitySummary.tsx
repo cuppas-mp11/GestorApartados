@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import * as XLSX from 'xlsx';
+import { downloadStyledExcel, Cell } from '../excelStyle';
 import { Sale, Expense, ExpenseCategoryItem, GarmentPriceEntry, FinanceSettings } from '../types';
 import {
   formatCurrency,
@@ -56,45 +56,80 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
 
   const bySeller = calculateCommissionsBySeller(rangeSales, garmentPrices, settings);
 
-  const exportExcel = () => {
-    const rows: (string | number)[][] = [];
-    rows.push(['Vestimenta GT — Rentabilidad y comisión']);
-    rows.push([`Del ${formatDate(start)} al ${formatDate(end)}`]);
-    rows.push([]);
-    rows.push(['Concepto', 'Monto (Q)']);
-    rows.push(['Ingresos por ventas', breakdown.revenue]);
-    rows.push(['Prendas vendidas', breakdown.itemsSold]);
-    rows.push(['Costo de la ropa (precio por prenda × prendas vendidas)', -breakdown.cogsGarment]);
-    rows.push(['Preparación y empaque por prenda (planchado, bolsa, etc.)', -breakdown.cogsUnitCosts]);
-    rows.push(['Total pagado con tarjeta', breakdown.cardTotal]);
-    rows.push([`Comisión de tarjeta (${settings.cardCommissionPercent}%)`, -breakdown.cardFee]);
-    rows.push(['Total pagado con transferencia/depósito', breakdown.transferTotal]);
-    rows.push([`IVA de factura (${settings.invoiceTaxPercent}%, tarjeta + transferencia)`, -breakdown.invoiceTax]);
-    rows.push(['GANANCIA NETA (base de comisión)', breakdown.netProfit]);
-    rows.push([`Comisión de vendedora (${settings.vendorCommissionPercent}%)`, -breakdown.vendorCommission]);
-    rows.push(['Ganancia después de comisión', breakdown.profitAfterCommission]);
-    rows.push(['Gastos fijos/variables del periodo', -expensesTotal]);
-    rows.push(['GANANCIA FINAL', finalProfit]);
-    rows.push([]);
-    rows.push(['Comisión por vendedora']);
-    rows.push(['Vendedora', 'Prendas vendidas', 'Ingresos (Q)', 'Ganancia neta (Q)', 'Comisión (Q)']);
-    bySeller.forEach((s) =>
-      rows.push([
-        getDisplayName(s.email, aliases), s.breakdown.itemsSold,
-        s.breakdown.revenue, s.breakdown.netProfit, s.breakdown.vendorCommission,
-      ])
-    );
-    rows.push([]);
-    rows.push(['Detalle de gastos del periodo']);
-    rows.push(['Fecha', 'Categoría', 'Tipo', 'Monto (Q)', 'Nota']);
-    rangeExpenses
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .forEach((e) => rows.push([formatDate(e.date), getExpenseCategoryLabel(e.categoryId, categories), e.frequency === 'fixed' ? 'Fijo' : 'Variable', e.amount, e.note || '']));
+  const exportExcel = async () => {
+    const subtitle = `Del ${formatDate(start)} al ${formatDate(end)}`;
+    const chain: Cell[][] = [
+      ['Ingresos por ventas', breakdown.revenue],
+      ['Prendas vendidas', { v: breakdown.itemsSold, type: 'int' }],
+      ['Costo de la ropa (precio por prenda × prendas vendidas)', -breakdown.cogsGarment],
+      ['Preparación y empaque por prenda (planchado, bolsa, etc.)', -breakdown.cogsUnitCosts],
+      ['Total pagado con tarjeta', breakdown.cardTotal],
+      [`Comisión de tarjeta (${settings.cardCommissionPercent}%)`, -breakdown.cardFee],
+      ['Total pagado con transferencia/depósito', breakdown.transferTotal],
+      [`IVA de factura (${settings.invoiceTaxPercent}%, tarjeta + transferencia)`, -breakdown.invoiceTax],
+      ['GANANCIA NETA (base de comisión)', breakdown.netProfit],
+      [`Comisión de vendedora (${settings.vendorCommissionPercent}%)`, -breakdown.vendorCommission],
+      ['Ganancia después de comisión', breakdown.profitAfterCommission],
+      ['Gastos fijos/variables del periodo', -expensesTotal],
+      ['GANANCIA FINAL', finalProfit],
+    ];
+    const sorted = [...rangeExpenses].sort((a, b) => a.date.localeCompare(b.date));
 
-    const worksheet = XLSX.utils.aoa_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Rentabilidad');
-    XLSX.writeFile(workbook, `Rentabilidad_${start}_a_${end}.xlsx`);
+    await downloadStyledExcel(`Rentabilidad_${start}_a_${end}.xlsx`, [
+      {
+        name: 'Rentabilidad',
+        title: 'Rentabilidad y comisión',
+        subtitle,
+        widths: [60, 18],
+        sections: [
+          {
+            columns: [{ header: 'Concepto' }, { header: 'Monto', type: 'money' }],
+            rows: chain,
+            emphasisRows: [8, 10, 12],
+          },
+        ],
+      },
+      {
+        name: 'Por vendedora',
+        title: 'Comisión por vendedora',
+        subtitle,
+        widths: [24, 12, 16, 18, 16],
+        sections: [
+          {
+            columns: [
+              { header: 'Vendedora' },
+              { header: 'Prendas', type: 'int' },
+              { header: 'Ingresos', type: 'money' },
+              { header: 'Ganancia neta', type: 'money' },
+              { header: 'Comisión', type: 'money' },
+            ],
+            rows: bySeller.map((s) => [getDisplayName(s.email, aliases), s.breakdown.itemsSold, s.breakdown.revenue, s.breakdown.netProfit, s.breakdown.vendorCommission]),
+            total: bySeller.length > 0
+              ? ['TOTAL', bySeller.reduce((a, s) => a + s.breakdown.itemsSold, 0), bySeller.reduce((a, s) => a + s.breakdown.revenue, 0), bySeller.reduce((a, s) => a + s.breakdown.netProfit, 0), bySeller.reduce((a, s) => a + s.breakdown.vendorCommission, 0)]
+              : undefined,
+          },
+        ],
+      },
+      {
+        name: 'Gastos',
+        title: 'Detalle de gastos del periodo',
+        subtitle,
+        widths: [24, 24, 12, 16, 40],
+        sections: [
+          {
+            columns: [
+              { header: 'Fecha' },
+              { header: 'Categoría' },
+              { header: 'Tipo', type: 'center' },
+              { header: 'Monto', type: 'money' },
+              { header: 'Nota' },
+            ],
+            rows: sorted.map((e) => [formatDate(e.date), getExpenseCategoryLabel(e.categoryId, categories), e.frequency === 'fixed' ? 'Fijo' : 'Variable', e.amount, e.note || '']),
+            total: sorted.length > 0 ? ['TOTAL', '', '', expensesTotal, ''] : undefined,
+          },
+        ],
+      },
+    ]);
   };
 
   return (
