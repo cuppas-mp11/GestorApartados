@@ -55,39 +55,7 @@ export const buildDayReportPdf = async (
       columnStyles: { 1: { halign: 'right' } },
     });
 
-    let afterSummaryY = (doc as any).lastAutoTable.finalY + 6;
-
-    // Si la vendedora ya envió el cierre del día, se incluye el cuadre de efectivo.
-    if (closing) {
-      const diff = closing.difference;
-      autoTable(doc, {
-        startY: afterSummaryY,
-        head: [['Cierre de caja (efectivo)', 'Monto']],
-        body: [
-          ['Efectivo con que abrió la caja', formatCurrency(closing.openingCash)],
-          ['+ Cobrado en efectivo', formatCurrency(closing.cashSales)],
-          ['Disponible según el sistema', formatCurrency(closing.expectedCash)],
-          ['Efectivo contado por la vendedora', formatCurrency(closing.countedCash)],
-          ['Enviado a la administradora', formatCurrency(closing.sentToAdmin || 0)],
-          ['Se queda en caja', formatCurrency(closing.keptInBox)],
-        ],
-        foot: [[
-          Math.abs(diff) < 0.01 ? 'CUADRA' : diff > 0 ? 'SOBRA' : 'FALTA',
-          { content: Math.abs(diff) < 0.01 ? formatCurrency(0) : formatCurrency(Math.abs(diff)), styles: { halign: 'right' } },
-        ]],
-        theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [43, 178, 151], textColor: 255 },
-        footStyles: Math.abs(diff) < 0.01
-          ? { fillColor: [232, 247, 242], textColor: [26, 138, 114], fontStyle: 'bold' }
-          : { fillColor: [251, 239, 241], textColor: [140, 58, 75], fontStyle: 'bold' },
-        columnStyles: { 1: { halign: 'right' } },
-      });
-      afterSummaryY = (doc as any).lastAutoTable.finalY + 6;
-      doc.setFontSize(8);
-      doc.text(`Cierre enviado por ${getDisplayName(closing.closedByEmail, aliases)} el ${new Date(closing.closedAt).toLocaleString('es-GT')}${closing.note ? ` — Nota: ${closing.note}` : ''}`, 14, afterSummaryY);
-      afterSummaryY += 6;
-    }
+    const afterSummaryY = (doc as any).lastAutoTable.finalY + 6;
 
     const tableHeaders = [['#', 'Prenda', 'Precio', 'Cantidad', 'Método(s)', 'Descuento', 'Total', 'Vendió']];
     const tableRows = data.map((s) => {
@@ -133,6 +101,74 @@ export const buildDayReportPdf = async (
       footStyles: { fillColor: [232, 247, 242], textColor: [26, 138, 114], fontStyle: 'bold', fontSize: 8 },
       columnStyles: { 2: { halign: 'right' }, 3: { halign: 'center' }, 6: { halign: 'right' } },
     });
+
+    // ---- Cierre de caja: va AL FINAL del reporte, después del detalle de ventas ----
+    if (closing) {
+      const diff = closing.difference;
+      const cuadra = Math.abs(diff) < 0.01;
+      const bold = { fontStyle: 'bold' as const };
+      const right = { halign: 'right' as const };
+      // Filas (contando desde 0) que llevan una línea negra gruesa debajo: separan
+      // los grupos de datos (de dónde sale el efectivo / lo esperado / lo enviado / lo que queda).
+      const THICK_BELOW_ROWS = [1, 2, 4, 5];
+
+      let y = (doc as any).lastAutoTable.finalY + 10;
+      if (y + 80 > doc.internal.pageSize.getHeight()) {
+        doc.addPage();
+        y = 20;
+      }
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Cierre de caja (efectivo)', { content: 'Monto', styles: { halign: 'right' } }]],
+        body: [
+          // Grupo 1: de dónde sale el efectivo
+          ['Efectivo con que abrió la caja', { content: formatCurrency(closing.openingCash), styles: right }],
+          ['+ Cobrado en efectivo', { content: formatCurrency(closing.cashSales), styles: right }],
+          // Grupo 2: lo que el sistema espera
+          [{ content: 'Disponible según el sistema', styles: bold }, { content: formatCurrency(closing.expectedCash), styles: { ...bold, ...right } }],
+          // Grupo 3: lo que se contó (resaltado en verde claro)
+          [
+            { content: 'Efectivo contado por la vendedora', styles: { ...bold, fillColor: [232, 247, 242] } },
+            { content: formatCurrency(closing.countedCash), styles: { ...bold, ...right, fillColor: [232, 247, 242] } },
+          ],
+          ['Enviado a la administradora', { content: formatCurrency(closing.sentToAdmin || 0), styles: right }],
+          // Grupo 4: lo que queda (resaltado en gris)
+          [
+            { content: 'Se queda en caja', styles: { ...bold, fillColor: [229, 229, 229] } },
+            { content: formatCurrency(closing.keptInBox), styles: { ...bold, ...right, fillColor: [229, 229, 229] } },
+          ],
+        ],
+        foot: [[
+          cuadra ? 'CUADRA' : diff > 0 ? 'SOBRA' : 'FALTA',
+          { content: cuadra ? formatCurrency(0) : formatCurrency(Math.abs(diff)), styles: { halign: 'right' } },
+        ]],
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [43, 178, 151], textColor: 255 },
+        footStyles: cuadra
+          ? { fillColor: [232, 247, 242], textColor: [26, 138, 114], fontStyle: 'bold' }
+          : { fillColor: [251, 239, 241], textColor: [140, 58, 75], fontStyle: 'bold' },
+        tableWidth: 110,
+        margin: { left: 14 },
+        // Línea negra gruesa debajo de las filas que cierran un grupo
+        didDrawCell: (data: any) => {
+          if (data.section === 'body' && THICK_BELOW_ROWS.includes(data.row.index)) {
+            doc.setDrawColor(0, 0, 0);
+            doc.setLineWidth(0.6);
+            doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
+          }
+        },
+      });
+
+      const noteY = (doc as any).lastAutoTable.finalY + 6;
+      doc.setFontSize(8);
+      doc.text(
+        `Cierre enviado por ${getDisplayName(closing.closedByEmail, aliases)} el ${new Date(closing.closedAt).toLocaleString('es-GT')}${closing.note ? ` — Nota: ${closing.note}` : ''}`,
+        14,
+        noteY
+      );
+    }
 
   return doc;
 };
