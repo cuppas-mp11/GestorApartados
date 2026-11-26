@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Reservation, ReservationStatus, InventoryItem, ReservationItem, Customer, Lot } from '../types';
-import { generateId, formatCurrency, parseLocalDateInput, getStockForCode, getLocalDateStr } from '../utils';
+import { Reservation, ReservationStatus, InventoryItem, ReservationItem, Customer, Lot, LotColorSettings } from '../types';
+import { generateId, formatCurrency, parseLocalDateInput, getStockForCode, getLocalDateStr, getCandidateLotsForCode, getEffectivePriceForLot, getLotStage, getStageInfo, getLotColorStyle } from '../utils';
 
 interface ReservationFormProps {
   onAdd: (reservation: Reservation) => Promise<void>;
@@ -8,9 +8,10 @@ interface ReservationFormProps {
   lots: Lot[];
   nextCorrelative: number;
   customers: Customer[];
+  lotColorSettings: LotColorSettings;
 }
 
-export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, inventory, lots, nextCorrelative, customers }) => {
+export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, inventory, lots, nextCorrelative, customers, lotColorSettings }) => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -34,6 +35,34 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
       .filter((i) => i.id !== exceptItemId && i.code === code)
       .reduce((acc, i) => acc + i.quantity, 0);
     return Math.max(0, totalStock - usedElsewhere);
+  };
+
+  // Lotes de un código que todavía tienen stock.
+  const lotsForCode = (code: string): Lot[] => getCandidateLotsForCode(code, lots).filter((l) => l.quantityRemaining > 0);
+
+  // Cuánto queda de un lote, restando lo que otras líneas de este apartado ya tomaron de él.
+  const availableForLot = (lotId: string, exceptItemId: string): number => {
+    const lot = lots.find((l) => l.id === lotId);
+    if (!lot) return 0;
+    const usedElsewhere = items.filter((i) => i.id !== exceptItemId && i.lotId === lotId).reduce((acc, i) => acc + i.quantity, 0);
+    return Math.max(0, lot.quantityRemaining - usedElsewhere);
+  };
+
+  // Congela el precio del lote elegido (con el descuento que tenga HOY) dentro de la línea.
+  const applyLot = (item: ReservationItem, lot: Lot | undefined, basePrice: number): ReservationItem => {
+    if (!lot) return { ...item, lotId: undefined, lotLabel: undefined, lotColor: undefined, basePrice, pricePerUnit: basePrice, priceNote: undefined };
+    const price = getEffectivePriceForLot(lot, basePrice, lotColorSettings);
+    const stage = lot.color ? getLotStage(lot.entryDate, lotColorSettings) : null;
+    const info = stage ? getStageInfo(stage) : null;
+    return {
+      ...item,
+      lotId: lot.id,
+      lotLabel: lot.label,
+      lotColor: lot.color,
+      basePrice,
+      pricePerUnit: price,
+      priceNote: info && info.label !== 'Precio normal' ? info.label : undefined,
+    };
   };
 
   // Autocompletar teléfono cuando el nombre coincide EXACTO con un cliente ya registrado
@@ -63,25 +92,33 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
 
   const updateItem = (id: string, updates: Partial<ReservationItem>) => {
     setItems(prevItems => prevItems.map(item => {
-      if (item.id === id) {
-        const updated = { ...item, ...updates };
-        if ('garmentId' in updates) {
-          const selectedInv = inventory.find(inv => inv.id === updates.garmentId);
-          if (selectedInv) {
-            updated.name = selectedInv.name;
-            updated.code = selectedInv.code;
-            updated.pricePerUnit = selectedInv.basePrice;
-            const stock = availableStock(selectedInv.code, item.id);
-            updated.quantity = Math.max(1, Math.min(updated.quantity || 1, Math.max(1, stock)));
-          } else {
-            updated.name = '';
-            updated.code = '';
-            updated.pricePerUnit = 0;
-          }
+      if (item.id !== id) return item;
+      let updated = { ...item, ...updates };
+      if ('garmentId' in updates) {
+        const selectedInv = inventory.find(inv => inv.id === updates.garmentId);
+        if (selectedInv) {
+          updated.name = selectedInv.name;
+          updated.code = selectedInv.code;
+          // Si hay un solo lote con stock, se elige solo; si hay varios, ella elige.
+          const candidates = lotsForCode(selectedInv.code);
+          updated = applyLot(updated, candidates.length === 1 ? candidates[0] : undefined, selectedInv.basePrice);
+          updated.quantity = 1;
+        } else {
+          updated = applyLot({ ...updated, name: '', code: '' }, undefined, 0);
         }
-        return updated;
       }
-      return item;
+      return updated;
+    }));
+  };
+
+  const chooseLot = (itemId: string, lotId: string) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      const inv = inventory.find(i => i.id === item.garmentId);
+      const lot = lots.find(l => l.id === lotId);
+      const applied = applyLot(item, lot, inv?.basePrice ?? item.basePrice ?? 0);
+      const max = lot ? Math.max(1, availableForLot(lotId, itemId)) : 1;
+      return { ...applied, quantity: Math.min(applied.quantity || 1, max) };
     }));
   };
 
@@ -122,8 +159,12 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
     // Verificación local de stock antes de intentar guardar (la verificación
     // definitiva ocurre igual en el servidor, por si alguien más vendió al mismo tiempo).
     for (const item of items) {
-      if (item.quantity > getStockForCode(item.code, lots)) {
-        setSubmitError(`No hay suficiente stock de "${item.name}". Revisa la cantidad.`);
+      if (!item.lotId) {
+        setSubmitError(`Elige el lote de "${item.name}" (según la etiqueta de la prenda).`);
+        return;
+      }
+      if (item.quantity > availableForLot(item.lotId, item.id)) {
+        setSubmitError(`No hay suficiente stock de "${item.name}" en ese lote. Revisa la cantidad.`);
         return;
       }
     }
@@ -136,7 +177,8 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
       customerName: customerName.trim(),
       customerCode: '', // App.tsx lo asigna al guardar, según la libreta de clientes
       phoneNumber,
-      items: items.filter(i => i.garmentId !== ''),
+      // Firestore no acepta valores `undefined`: se limpian antes de guardar.
+      items: items.filter(i => i.garmentId !== '').map(i => JSON.parse(JSON.stringify(i)) as ReservationItem),
       date: parseLocalDateInput(date).toISOString(),
       status: ReservationStatus.PENDING,
       depositAmount: deposit,
@@ -253,37 +295,86 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
                     )}
                   </div>
 
-                  {item.garmentId && (
-                    <div className="flex items-center justify-between px-1">
-                      <div className="flex items-center gap-4">
-                        <div>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">Precio Unit.</p>
-                          <p className="text-xs font-bold text-slate-700">{formatCurrency(item.pricePerUnit)}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase mb-1 text-center">
-                            Cant. <span className="text-slate-300 normal-case">(stock: {availableStock(item.code, item.id) + item.quantity})</span>
+                  {item.garmentId && (() => {
+                    const lotsAvail = lotsForCode(item.code);
+                    const selectedLot = lots.find(l => l.id === item.lotId);
+                    const badge = getLotColorStyle(selectedLot?.color);
+                    const maxQty = item.lotId ? availableForLot(item.lotId, item.id) : 0;
+                    return (
+                      <>
+                        {lotsAvail.length > 1 && (
+                          <div>
+                            <label className="block text-[9px] font-black text-[#1a8a72] uppercase mb-1">
+                              Lote / etiqueta <span className="normal-case text-slate-400">— según la etiqueta física de la prenda</span>
+                            </label>
+                            <select
+                              className="w-full px-3 py-2 border-2 border-[#2bb297]/40 rounded-lg text-sm font-bold focus:ring-2 focus:ring-[#2bb297]"
+                              value={item.lotId || ''}
+                              onChange={(e) => chooseLot(item.id, e.target.value)}
+                            >
+                              <option value="">-- Elegir lote --</option>
+                              {lotsAvail.map((lot) => {
+                                const base = item.basePrice ?? 0;
+                                const price = getEffectivePriceForLot(lot, base, lotColorSettings);
+                                const avail = availableForLot(lot.id, item.id);
+                                const st = getLotColorStyle(lot.color);
+                                return (
+                                  <option key={lot.id} value={lot.id} disabled={avail <= 0 && lot.id !== item.lotId} style={{ backgroundColor: st.bg, color: st.text }}>
+                                    {lot.label} — {price !== base ? `${formatCurrency(base)} → ${formatCurrency(price)}` : formatCurrency(base)} · disponible: {avail}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+                        )}
+                        {selectedLot && (
+                          <p className="text-[10px] font-bold text-slate-400">
+                            Lote:{' '}
+                            <span className="inline-block px-2.5 py-1 rounded-full font-black uppercase tracking-wide" style={{ backgroundColor: badge.bg, color: badge.text }}>
+                              {selectedLot.label}
+                            </span>
+                            {lotsAvail.length === 1 && <span className="normal-case"> — único en stock, seleccionado automáticamente</span>}
                           </p>
-                          <input
-                            type="number"
-                            min="1"
-                            max={availableStock(item.code, item.id) + item.quantity}
-                            className="w-16 px-2 py-1 border border-slate-200 rounded-md text-xs font-bold text-center"
-                            value={item.quantity}
-                            onChange={(e) => {
-                              const max = availableStock(item.code, item.id) + item.quantity;
-                              const val = Math.max(1, Math.min(max, parseInt(e.target.value) || 1));
-                              updateItem(item.id, { quantity: val });
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">Subtotal</p>
-                        <p className="text-sm font-black text-[#2bb297]">{formatCurrency(item.pricePerUnit * item.quantity)}</p>
-                      </div>
-                    </div>
-                  )}
+                        )}
+                        {item.lotId && (
+                          <div className="flex items-center justify-between px-1">
+                            <div className="flex items-center gap-4">
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">Precio Unit. (congelado)</p>
+                                <p className="text-xs font-bold text-slate-700">
+                                  {formatCurrency(item.pricePerUnit)}
+                                  {item.basePrice !== undefined && item.pricePerUnit !== item.basePrice && (
+                                    <span className="text-slate-400 line-through ml-1.5">{formatCurrency(item.basePrice)}</span>
+                                  )}
+                                </p>
+                                {item.priceNote && <p className="text-[9px] font-black text-[#8a6a3f]">{item.priceNote}</p>}
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1 text-center">
+                                  Cant. <span className="text-slate-300 normal-case">(en ese lote: {maxQty})</span>
+                                </p>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max={Math.max(1, maxQty)}
+                                  className="w-16 px-2 py-1 border border-slate-200 rounded-md text-xs font-bold text-center"
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const val = Math.max(1, Math.min(Math.max(1, maxQty), parseInt(e.target.value) || 1));
+                                    updateItem(item.id, { quantity: val });
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-slate-400 font-bold uppercase">Subtotal</p>
+                              <p className="text-sm font-black text-[#2bb297]">{formatCurrency(item.pricePerUnit * item.quantity)}</p>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               ))
             )}
@@ -309,7 +400,7 @@ export const ReservationForm: React.FC<ReservationFormProps> = ({ onAdd, invento
               type="number"
               required
               min="0"
-              step="0.01"
+              step="any"
               className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#2bb297] font-bold"
               value={depositAmount}
               onChange={(e) => setDepositAmount(e.target.value)}

@@ -50,7 +50,6 @@ import { ProfitabilitySummary } from './components/ProfitabilitySummary';
 import { DataResetPanel } from './components/DataResetPanel';
 import { LotColorSettingsCard } from './components/LotColorSettingsCard';
 import { InventoryCatalogTable } from './components/InventoryCatalogTable';
-import { SaleForm } from './components/SaleForm';
 import { QuickSaleForm } from './components/QuickSaleForm';
 import { EditSaleModal } from './components/EditSaleModal';
 import { SalesHistory } from './components/SalesHistory';
@@ -118,7 +117,7 @@ const App: React.FC = () => {
 
   const [page, setPage] = useState<Page>('inicio');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [saleMode, setSaleMode] = useState<'quick' | 'detailed'>('quick');
+  const [saleMode, setSaleMode] = useState<'quick' | 'history'>('quick');
   // Para la vendedora el Resumen del día va hasta abajo y oculto por
   // seguridad (su pantalla puede estar a la vista de otras personas) — el
   // admin siempre lo ve, así que este estado solo aplica a su vista.
@@ -367,6 +366,37 @@ const App: React.FC = () => {
     return allocations;
   };
 
+  // Descuenta stock de lotes ELEGIDOS a mano (apartados con lote). Una sola
+  // transacción: si algún lote ya no tiene suficiente, no se descuenta nada.
+  const allocateFromChosenLots = async (
+    needs: { lotId: string; code: string; quantity: number }[]
+  ): Promise<StockAllocation[]> => {
+    const byLot = new Map<string, { code: string; quantity: number }>();
+    for (const n of needs) {
+      const cur = byLot.get(n.lotId) || { code: n.code, quantity: 0 };
+      cur.quantity += n.quantity;
+      byLot.set(n.lotId, cur);
+    }
+    const allocations: StockAllocation[] = [];
+    await runTransaction(db, async (transaction) => {
+      allocations.length = 0;
+      const writes: { ref: ReturnType<typeof doc>; newRemaining: number }[] = [];
+      for (const [lotId, need] of byLot) {
+        const ref = doc(db, LOTS_COLLECTION, lotId);
+        const snap = await transaction.get(ref);
+        if (!snap.exists()) throw new Error('El lote elegido ya no existe. Vuelve a elegir el lote.');
+        const lot = snap.data() as Lot;
+        if (lot.quantityRemaining < need.quantity) {
+          throw new Error(`No hay suficiente stock en el lote ${lot.label}. Disponible: ${lot.quantityRemaining}, se necesitaban ${need.quantity}.`);
+        }
+        writes.push({ ref, newRemaining: lot.quantityRemaining - need.quantity });
+        allocations.push({ lotId, code: need.code, quantity: need.quantity });
+      }
+      for (const w of writes) transaction.update(w.ref, { quantityRemaining: w.newRemaining });
+    });
+    return allocations;
+  };
+
   // Devuelve stock a los lotes de origen (al liberar/eliminar un apartado o
   // anular una venta). Si algún lote ya no existe (fue borrado por un admin),
   // simplemente se omite esa porción.
@@ -410,8 +440,24 @@ const App: React.FC = () => {
 
     // Descuenta el stock de las prendas apartadas (lanza error si no alcanza,
     // y en ese caso no se guarda el apartado — ReservationForm muestra el aviso).
-    const needs = reservation.items.map((it) => ({ code: it.code, quantity: it.quantity }));
-    const stockAllocations = await allocateAndDecrementStock(needs);
+    // Las prendas con lote elegido salen de ESE lote; las que no traen lote
+    // (datos viejos) siguen el FIFO de siempre.
+    const chosen = reservation.items.filter((it) => it.lotId);
+    const noLot = reservation.items.filter((it) => !it.lotId);
+    const stockAllocations: StockAllocation[] = [];
+    if (chosen.length > 0) {
+      stockAllocations.push(
+        ...(await allocateFromChosenLots(chosen.map((it) => ({ lotId: it.lotId as string, code: it.code, quantity: it.quantity }))))
+      );
+    }
+    if (noLot.length > 0) {
+      try {
+        stockAllocations.push(...(await allocateAndDecrementStock(noLot.map((it) => ({ code: it.code, quantity: it.quantity })))));
+      } catch (err) {
+        await restoreStock(stockAllocations); // no dejar stock descontado si el apartado no se guarda
+        throw err;
+      }
+    }
 
     await setDoc(doc(db, RESERVATIONS_COLLECTION, reservation.id), {
       ...reservation,
@@ -625,6 +671,36 @@ const App: React.FC = () => {
       field,
       oldValue: oldValue || '',
       newValue,
+      editedByEmail: editorEmail,
+      editedAt: now,
+    };
+    await setDoc(doc(db, 'editLogs', logEntry.id), logEntry);
+  };
+
+  // Corrección manual (solo admin) del precio congelado de una prenda de un
+  // apartado — por ejemplo si hubo un error al apartar. Queda en el historial de
+  // ediciones con el precio anterior y el nuevo.
+  const editReservationItemPrice = async (reservationId: string, itemId: string, newPrice: number) => {
+    if (role !== 'admin') {
+      alert('Solo un administrador puede corregir el precio de un apartado.');
+      return;
+    }
+    const res = reservations.find((r) => r.id === reservationId);
+    const item = res?.items.find((i) => i.id === itemId);
+    if (!res || !item || item.pricePerUnit === newPrice) return;
+    const now = new Date().toISOString();
+    const editorEmail = user?.email || 'desconocido';
+    await updateDoc(doc(db, RESERVATIONS_COLLECTION, reservationId), {
+      items: res.items.map((i) => (i.id === itemId ? { ...i, pricePerUnit: newPrice, priceNote: 'Precio corregido por administración' } : i)),
+      lastEditedAt: now,
+      lastEditedByEmail: editorEmail,
+    });
+    const logEntry: EditLogEntry = {
+      id: generateId(),
+      reservationId,
+      field: `precio de ${item.code}`,
+      oldValue: String(item.pricePerUnit),
+      newValue: String(newPrice),
       editedByEmail: editorEmail,
       editedAt: now,
     };
@@ -1226,6 +1302,15 @@ const App: React.FC = () => {
                 <p className="text-[#6f2d3a] text-xs font-black">{overdueCount} VENCIDOS</p>
               </div>
             )}
+            <span
+              className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${
+                role === 'admin'
+                  ? 'bg-[#8c3a4b]/10 text-[#8c3a4b] border-[#8c3a4b]/30'
+                  : 'bg-[#2bb297]/10 text-[#1a8a72] border-[#2bb297]/30'
+              }`}
+            >
+              {role === 'admin' ? 'Admin' : 'Tienda'}
+            </span>
             <button
               onClick={() => signOut(auth)}
               className="text-xs font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2 py-2"
@@ -1320,6 +1405,7 @@ const App: React.FC = () => {
                   lots={lots}
                   nextCorrelative={nextCorrelative}
                   customers={customers}
+                  lotColorSettings={lotColorSettings}
                 />
               </div>
 
@@ -1347,6 +1433,7 @@ const App: React.FC = () => {
                   onDelete={deleteReservation}
                   onAddPayment={addPayment}
                   onEditField={editReservationField}
+                  onEditItemPrice={editReservationItemPrice}
                   role={role}
                   aliases={aliases}
                 />
@@ -1377,24 +1464,17 @@ const App: React.FC = () => {
                     Venta del día
                   </button>
                   <button
-                    onClick={() => setSaleMode('detailed')}
-                    className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${saleMode === 'detailed' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    onClick={() => setSaleMode('history')}
+                    className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${saleMode === 'history' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                   >
-                    Venta detallada (con clienta)
+                    Historial de ventas
                   </button>
                 </div>
 
                 {saleMode === 'quick' ? (
                   <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} lotColorSettings={lotColorSettings} />
                 ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                    <div className="lg:col-span-1 space-y-4">
-                      <SaleForm onAdd={addSale} inventory={inventory} lots={lots} nextCorrelative={nextSaleCorrelative} customers={customers} lotColorSettings={lotColorSettings} />
-                    </div>
-                    <div className="lg:col-span-3">
-                      <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
-                    </div>
-                  </div>
+                  <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
                 )}
               </div>
             );

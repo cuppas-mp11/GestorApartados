@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Reservation, ReservationStatus, UserRole } from '../types';
-import { formatDate, isOverdue, calculateDaysPassed, formatCurrency, getDeadlineDate, getTotalPrice, getTotalPaid, getBalance, DEADLINE_DAYS, getDisplayName } from '../utils';
+import { formatDate, isOverdue, calculateDaysPassed, formatCurrency, getDeadlineDate, getTotalPrice, getTotalPaid, getBalance, DEADLINE_DAYS, getDisplayName, getLotColorStyle } from '../utils';
 
 interface ReservationTableProps {
   reservations: Reservation[];
@@ -8,11 +8,12 @@ interface ReservationTableProps {
   onDelete: (id: string) => void;
   onAddPayment: (id: string, amount: number) => void;
   onEditField: (id: string, field: 'customerName' | 'phoneNumber', newValue: string) => void;
+  onEditItemPrice: (reservationId: string, itemId: string, newPrice: number) => void;
   role: UserRole | null;
   aliases: Record<string, string>;
 }
 
-export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations, onUpdateStatus, onDelete, onAddPayment, onEditField, role, aliases }) => {
+export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations, onUpdateStatus, onDelete, onAddPayment, onEditField, onEditItemPrice, role, aliases }) => {
   const [addingPaymentId, setAddingPaymentId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentError, setPaymentError] = useState('');
@@ -20,6 +21,8 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editPhoneError, setEditPhoneError] = useState('');
+  const [priceEditKey, setPriceEditKey] = useState<string | null>(null);
+  const [priceEditValue, setPriceEditValue] = useState('');
 
   const startEditing = (res: Reservation) => {
     setEditingId(res.id);
@@ -149,12 +152,57 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                   </td>
                   <td className="px-4 py-4 align-top">
                     <ul className="text-xs space-y-1.5">
-                      {res.items.map((item) => (
-                        <li key={item.id} className="text-slate-600 flex gap-2 items-center">
-                          <span className="bg-slate-100 text-[9px] font-black text-slate-400 px-1 rounded border border-slate-200">{item.code}</span>
-                          <span className="font-medium"><span className="font-black">{item.quantity}x</span> {item.name}</span>
-                        </li>
-                      ))}
+                      {res.items.map((item) => {
+                        const key = `${res.id}:${item.id}`;
+                        const badge = getLotColorStyle(item.lotColor);
+                        const editingPrice = priceEditKey === key;
+                        return (
+                          <li key={item.id} className="text-slate-600">
+                            <div className="flex gap-2 items-center flex-wrap">
+                              <span className="bg-slate-100 text-[9px] font-black text-slate-400 px-1 rounded border border-slate-200">{item.code}</span>
+                              <span className="font-medium"><span className="font-black">{item.quantity}x</span> {item.name}</span>
+                              {item.lotLabel && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase" style={{ backgroundColor: badge.bg, color: badge.text }}>
+                                  {item.lotLabel}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-bold mt-0.5">
+                              {formatCurrency(item.pricePerUnit)} c/u <span className="normal-case">(precio congelado{item.basePrice !== undefined && item.basePrice !== item.pricePerUnit ? `, normal ${formatCurrency(item.basePrice)}` : ''})</span>
+                              {item.priceNote && <span className="text-[#8a6a3f]"> · {item.priceNote}</span>}
+                              {role === 'admin' && res.status === ReservationStatus.PENDING && !editingPrice && (
+                                <button
+                                  onClick={() => { setPriceEditKey(key); setPriceEditValue(String(item.pricePerUnit)); }}
+                                  className="ml-2 text-[#2bb297] hover:text-[#1a8a72] font-black uppercase"
+                                >
+                                  ✎ precio
+                                </button>
+                              )}
+                            </div>
+                            {editingPrice && (
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <input
+                                  type="number" step="any" min="0"
+                                  className="w-20 px-2 py-1 border border-slate-200 rounded-md text-xs font-bold text-center"
+                                  value={priceEditValue}
+                                  onChange={(e) => setPriceEditValue(e.target.value)}
+                                />
+                                <button
+                                  onClick={() => {
+                                    const v = parseFloat(priceEditValue);
+                                    if (!isNaN(v) && v >= 0) onEditItemPrice(res.id, item.id, v);
+                                    setPriceEditKey(null);
+                                  }}
+                                  className="text-[10px] font-black text-white bg-[#2bb297] px-2 py-1 rounded-md"
+                                >
+                                  Guardar
+                                </button>
+                                <button onClick={() => setPriceEditKey(null)} className="text-[10px] font-black text-slate-400 px-1">Cancelar</button>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </td>
                   <td className="px-4 py-4 align-top text-center">
@@ -242,7 +290,7 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                           <div className="flex items-center gap-1">
                             <input
                               type="number"
-                              step="0.01"
+                              step="any"
                               className="w-24 px-2 py-1 text-xs border border-[#c9a876]/40 rounded focus:ring-1 focus:ring-[#c9a876] bg-[#c9a876]/10 font-bold"
                               placeholder="Monto Q"
                               value={paymentAmount}

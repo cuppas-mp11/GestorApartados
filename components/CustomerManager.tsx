@@ -178,7 +178,7 @@ export const CustomerManager: React.FC<CustomerManagerProps> = ({ customers, cre
                           <div className="mt-2 p-2 bg-[#c9a876]/10 border border-[#c9a876]/30 rounded-lg space-y-2">
                             <input
                               type="number"
-                              step="0.01"
+                              step="any"
                               className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs"
                               placeholder="Monto (+abona, -resta)"
                               value={adjustAmount}

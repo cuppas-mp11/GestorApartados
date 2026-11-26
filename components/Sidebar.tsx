@@ -28,20 +28,20 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    id: 'apartados',
-    label: 'Apartados',
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-      </svg>
-    ),
-  },
-  {
     id: 'ventas',
     label: 'Ventas',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h5M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'apartados',
+    label: 'Apartados',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
       </svg>
     ),
   },
@@ -146,17 +146,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ page, setPage, role, isOpen, o
           ))}
         </nav>
 
-        <div className="p-3 border-t border-slate-100">
-          <span
-            className={`block w-full text-center text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-full ${
-              role === 'admin'
-                ? 'bg-[#8c3a4b]/10 text-[#8c3a4b] border border-[#8c3a4b]/30'
-                : 'bg-[#2bb297]/10 text-[#1a8a72] border border-[#2bb297]/30'
-            }`}
-          >
-            {role === 'admin' ? 'Admin' : 'Tienda'}
-          </span>
-        </div>
       </aside>
     </>
   );

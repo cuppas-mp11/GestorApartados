@@ -169,7 +169,7 @@ export const ExpensesPanel: React.FC<ExpensesPanelProps> = ({
                   <div>
                     <label className="block text-[8px] font-black text-slate-400 uppercase mb-0.5">Monto</label>
                     <input
-                      type="number" step="0.01" min="0"
+                      type="number" step="any" min="0"
                       className="w-24 px-2 py-1 border border-slate-200 rounded text-xs font-bold"
                       value={confirmAmount}
                       onChange={(e) => setConfirmAmount(e.target.value)}
@@ -206,7 +206,7 @@ export const ExpensesPanel: React.FC<ExpensesPanelProps> = ({
               {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
             <input
-              type="number" step="0.01" min="0"
+              type="number" step="any" min="0"
               className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold"
               placeholder="Monto mensual (Q)"
               value={templateAmount}
@@ -275,7 +275,7 @@ export const ExpensesPanel: React.FC<ExpensesPanelProps> = ({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Monto (Q)</label>
-              <input type="number" step="0.01" min="0" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Ej. 85" />
+              <input type="number" step="any" min="0" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Ej. 85" />
             </div>
             <div>
               <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>

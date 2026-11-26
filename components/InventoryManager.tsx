@@ -181,6 +181,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, lots,
                 <label className="block text-[10px] font-bold text-[#2bb297] uppercase mb-1">Precio Unitario (Q)</label>
                 <input
                   type="number"
+                  step="any"
+                  min="0"
                   placeholder="0.00"
                   className="w-full px-3 py-2 border rounded-lg text-sm"
                   value={price}

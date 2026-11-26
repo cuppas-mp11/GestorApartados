@@ -552,3 +552,10 @@ export const calculateCommissionsBySeller = (
       breakdown: calculateProfitability(sales.filter((s) => s.soldByEmail === email), garmentPrices, settings),
     }))
     .sort((a, b) => b.breakdown.revenue - a.breakdown.revenue);
+
+// "Miércoles 25-Nov-26" — para mostrar la fecha del día en el Resumen.
+export const formatTodayLabel = (date: Date = new Date()): string => {
+  const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  return `${days[date.getDay()]} ${String(date.getDate()).padStart(2, '0')}-${months[date.getMonth()]}-${String(date.getFullYear()).slice(-2)}`;
+};

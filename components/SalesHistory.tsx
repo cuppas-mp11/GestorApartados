@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { Sale, SaleStatus, UserRole } from '../types';
-import { formatDate, formatCurrency, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getDisplayName, isSameLocalDay } from '../utils';
+import { formatDate, formatCurrency, getSaleTotal, getSaleItemsCount, paymentMethodLabel, getDisplayName, isSameLocalDay, getLocalDateStr, isDateInRange } from '../utils';
 
 interface SalesHistoryProps {
   sales: Sale[];
@@ -19,15 +20,72 @@ const paymentBadgeStyles: Record<string, string> = {
 };
 
 export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onEditSale, role, aliases }) => {
-  const [filter, setFilter] = useState<'ALL' | 'TODAY' | 'CANCELLED'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'CANCELLED'>('ALL');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
 
-  
+  const today = getLocalDateStr();
+  const shiftDays = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return getLocalDateStr(d);
+  };
+  const setRange = (s: string, e: string) => { setStart(s); setEnd(e); };
+  const setToday = () => setRange(today, today);
+  const setYesterday = () => setRange(shiftDays(-1), shiftDays(-1));
+  const setThisWeek = () => {
+    const d = new Date();
+    const diffToMonday = (d.getDay() + 6) % 7; // lunes = inicio de semana
+    setRange(shiftDays(-diffToMonday), today);
+  };
+  const setThisMonth = () => setRange(today.slice(0, 8) + '01', today);
+  const clearRange = () => setRange('', '');
 
-  const filtered = sales.filter((s) => {
-    if (filter === 'TODAY') return isSameLocalDay(s.date);
-    if (filter === 'CANCELLED') return s.status === SaleStatus.CANCELLED;
-    return true;
-  });
+  // Con solo "Desde" se muestra desde esa fecha en adelante; con solo "Hasta", hasta esa fecha.
+  const filtered = sales
+    .filter((s) => {
+      if (filter === 'CANCELLED' && s.status !== SaleStatus.CANCELLED) return false;
+      const lo = start || '0000-01-01';
+      const hi = end || '9999-12-31';
+      return isDateInRange(s.date, lo, hi);
+    })
+    .sort((a, b) => b.correlative - a.correlative);
+
+  const completed = filtered.filter((s) => s.status === SaleStatus.COMPLETED);
+  const rangeTotal = completed.reduce((acc, s) => acc + getSaleTotal(s), 0);
+  const rangeItems = completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
+  const rangeInvalid = !!start && !!end && end < start;
+  const hasRange = !!start || !!end;
+  const isActive = (s: string, e: string) => start === s && end === e;
+
+  const exportExcel = () => {
+    const rows: (string | number)[][] = [
+      ['Vestimenta GT — Historial de ventas'],
+      [hasRange ? `Del ${start ? formatDate(start) : 'inicio'} al ${end ? formatDate(end) : 'hoy'}` : 'Todas las fechas'],
+      [],
+      ['#', 'Fecha', 'Vendió', 'Prendas', 'Pago(s)', 'Total (Q)', 'Estado'],
+    ];
+    [...filtered].sort((a, b) => a.correlative - b.correlative).forEach((s) =>
+      rows.push([
+        s.correlative,
+        formatDate(s.date),
+        getDisplayName(s.soldByEmail, aliases),
+        s.items.map((i) => `${i.quantity}x ${i.code} ${i.name}`).join(' | '),
+        s.payments.map((p) => `${paymentMethodLabel(p.method)} ${p.amount.toFixed(2)}`).join(' + '),
+        getSaleTotal(s),
+        s.status === SaleStatus.CANCELLED ? 'Anulada' : 'Completada',
+      ])
+    );
+    rows.push([]);
+    rows.push(['', '', '', '', 'TOTAL (sin anuladas)', rangeTotal]);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Historial');
+    XLSX.writeFile(wb, `Historial_ventas_${start || 'inicio'}_a_${end || today}.xlsx`);
+  };
+
+  const chip = (active: boolean) =>
+    `px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition border ${active ? 'bg-[#2bb297] text-white border-[#2bb297]' : 'bg-white text-slate-500 border-slate-200 hover:border-[#2bb297] hover:text-[#1a8a72]'}`;
 
   if (sales.length === 0) {
     return (
@@ -42,10 +100,47 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onE
 
   return (
     <div>
-      <div className="mb-4 flex p-1 bg-slate-50 rounded-xl w-fit gap-1 border border-slate-200">
-        <button onClick={() => setFilter('ALL')} className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'ALL' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>TODAS</button>
-        <button onClick={() => setFilter('TODAY')} className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'TODAY' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>HOY</button>
-        <button onClick={() => setFilter('CANCELLED')} className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'CANCELLED' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ANULADAS</button>
+      <div className="mb-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Desde</label>
+            <input type="date" className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold" value={start} max={end || today} onChange={(e) => setStart(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Hasta</label>
+            <input type="date" className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold" value={end} min={start || undefined} max={today} onChange={(e) => setEnd(e.target.value)} />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button onClick={setToday} className={chip(isActive(today, today))}>Hoy</button>
+            <button onClick={setYesterday} className={chip(isActive(shiftDays(-1), shiftDays(-1)))}>Ayer</button>
+            <button onClick={setThisWeek} className={chip(false)}>Esta semana</button>
+            <button onClick={setThisMonth} className={chip(false)}>Este mes</button>
+            {hasRange && <button onClick={clearRange} className="px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase text-slate-400 hover:text-slate-600">Quitar fechas</button>}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex p-1 bg-slate-50 rounded-xl w-fit gap-1 border border-slate-200">
+            <button onClick={() => setFilter('ALL')} className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'ALL' ? 'bg-white text-[#1a8a72] shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>TODAS</button>
+            <button onClick={() => setFilter('CANCELLED')} className={`px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition ${filter === 'CANCELLED' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ANULADAS</button>
+          </div>
+          <button
+            onClick={exportExcel}
+            disabled={filtered.length === 0 || rangeInvalid}
+            className="bg-slate-800 disabled:bg-slate-300 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition"
+          >
+            Descargar Excel
+          </button>
+        </div>
+
+        {rangeInvalid ? (
+          <p className="text-[11px] font-bold text-[#8c3a4b]">La fecha "Hasta" no puede ser anterior a "Desde".</p>
+        ) : (
+          <p className="text-[11px] font-black text-slate-500">
+            {completed.length} venta(s) · {rangeItems} prenda(s) · Total <span className="text-[#1a8a72]">{formatCurrency(rangeTotal)}</span>
+            <span className="text-slate-400 font-bold"> (sin contar anuladas){filter === 'CANCELLED' ? ' — viendo solo anuladas' : ''}</span>
+          </p>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -63,6 +158,9 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ sales, onCancel, onE
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400 font-bold">No hay ventas en este filtro.</td></tr>
+              )}
               {filtered.map((sale) => {
                 const total = getSaleTotal(sale);
                 const cancelled = sale.status === SaleStatus.CANCELLED;

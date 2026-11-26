@@ -305,6 +305,18 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
     setIsOpen(false);
   };
 
+  // ¿Hay una venta a medias? (alguna prenda elegida o nota escrita)
+  const pendingCount = rows.filter((r) => r.garmentId !== '').length;
+  const hasPending = pendingCount > 0 || note.trim() !== '';
+
+  const discardSale = () => {
+    if (!window.confirm('¿Descartar esta venta? Se borrarán todas las prendas que agregaste.')) return;
+    setRows([emptyRow()]);
+    setNote('');
+    setError('');
+    resetPaymentUi();
+  };
+
   if (!isOpen) {
     return (
       <button
@@ -315,6 +327,12 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
         </svg>
         Venta Nueva
+        {hasPending && (
+          <span className="inline-flex items-center gap-1.5 bg-white/90 text-[#8a6a3f] text-[10px] font-black px-2 py-0.5 rounded-full normal-case tracking-normal">
+            <span className="h-2 w-2 rounded-full bg-[#c9a876] animate-pulse"></span>
+            {pendingCount > 0 ? `${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}` : 'pendiente'}
+          </span>
+        )}
       </button>
     );
   }
@@ -460,7 +478,7 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
                             <input
                               type="number"
                               min="0"
-                              step="0.01"
+                              step="any"
                               max={Math.max(0, c.subtotal - c.lotDiscountTotal)}
                               className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-bold"
                               value={row.extraDiscount || ''}
@@ -605,7 +623,7 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
                             <input
                               type="number"
                               min="0"
-                              step="0.01"
+                              step="any"
                               className="w-28 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-right"
                               value={combinedAmounts[m.value]}
                               onChange={(e) => setCombinedAmounts((prev) => ({ ...prev, [m.value]: e.target.value }))}
@@ -665,7 +683,15 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex-shrink-0 flex items-center justify-end gap-3">
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex-shrink-0 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={discardSale}
+            disabled={!hasPending || saving}
+            className="px-4 py-3 text-[#8c3a4b] border border-[#8c3a4b]/30 hover:bg-[#8c3a4b]/10 disabled:opacity-30 disabled:hover:bg-transparent text-xs font-black rounded-xl uppercase tracking-wide transition"
+          >
+            Descartar venta
+          </button>
           <button
             type="button"
             disabled={!canSave || saving}

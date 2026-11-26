@@ -263,11 +263,11 @@ export const LotColorSettingsCard: React.FC<LotColorSettingsCardProps> = ({ sett
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">% primer descuento</label>
-            <input type="number" step="0.01" min="0" max="100" className="w-full px-2 py-2 border border-[#c9a876]/40 rounded-lg text-sm font-black bg-[#c9a876]/10 text-center" value={firstDiscountPercent} onChange={(e) => setFirstDiscountPercent(e.target.value)} />
+            <input type="number" step="any" min="0" max="100" className="w-full px-2 py-2 border border-[#c9a876]/40 rounded-lg text-sm font-black bg-[#c9a876]/10 text-center" value={firstDiscountPercent} onChange={(e) => setFirstDiscountPercent(e.target.value)} />
           </div>
           <div>
             <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">% descuento final</label>
-            <input type="number" step="0.01" min="0" max="100" className="w-full px-2 py-2 border border-[#8c3a4b]/30 rounded-lg text-sm font-black bg-[#8c3a4b]/5 text-center" value={finalDiscountPercent} onChange={(e) => setFinalDiscountPercent(e.target.value)} />
+            <input type="number" step="any" min="0" max="100" className="w-full px-2 py-2 border border-[#8c3a4b]/30 rounded-lg text-sm font-black bg-[#8c3a4b]/5 text-center" value={finalDiscountPercent} onChange={(e) => setFinalDiscountPercent(e.target.value)} />
           </div>
         </div>
 

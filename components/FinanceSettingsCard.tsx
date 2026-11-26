@@ -40,7 +40,7 @@ export const FinanceSettingsCard: React.FC<FinanceSettingsCardProps> = ({ settin
     }
     const cleanUnitCosts = unitCosts.filter((u) => u.label.trim());
     if (cleanUnitCosts.some((u) => isNaN(u.amount) || u.amount < 0)) {
-      setError('Cada costo por prenda necesita un monto válido (0 o más).');
+      setError('Cada costo de preparación y empaque necesita un monto válido (0 o más).');
       return;
     }
     onSave({
@@ -82,7 +82,7 @@ export const FinanceSettingsCard: React.FC<FinanceSettingsCardProps> = ({ settin
           </div>
         </div>
 
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Costos por prenda vendida</p>
+        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Preparación y empaque por prenda vendida</p>
         {(!settings.unitCosts || settings.unitCosts.length === 0) ? (
           <p className="text-[11px] text-slate-400 font-bold">Ninguno configurado todavía.</p>
         ) : (
@@ -119,7 +119,7 @@ export const FinanceSettingsCard: React.FC<FinanceSettingsCardProps> = ({ settin
             Comisión de tarjeta (%) <span className="normal-case text-slate-400">— cobro del procesador (ej. Visa), solo sobre lo pagado con tarjeta</span>
           </label>
           <input
-            type="number" step="0.01" min="0" max="100"
+            type="number" step="any" min="0" max="100"
             className="w-28 px-3 py-2 border border-[#2bb297]/30 rounded-lg text-sm font-black bg-[#2bb297]/5 text-center"
             value={cardCommission}
             onChange={(e) => setCardCommission(e.target.value)}
@@ -130,7 +130,7 @@ export const FinanceSettingsCard: React.FC<FinanceSettingsCardProps> = ({ settin
             IVA de factura (%) <span className="normal-case text-slate-400">— aplica a tarjeta Y a transferencia/depósito (ambos generan factura)</span>
           </label>
           <input
-            type="number" step="0.01" min="0" max="100"
+            type="number" step="any" min="0" max="100"
             className="w-28 px-3 py-2 border border-[#2bb297]/30 rounded-lg text-sm font-black bg-[#2bb297]/5 text-center"
             value={invoiceTax}
             onChange={(e) => setInvoiceTax(e.target.value)}
@@ -141,7 +141,7 @@ export const FinanceSettingsCard: React.FC<FinanceSettingsCardProps> = ({ settin
             Comisión de vendedora (%) <span className="normal-case text-slate-400">— sobre la ganancia neta del periodo, puede cambiar cada mes</span>
           </label>
           <input
-            type="number" step="0.01" min="0" max="100"
+            type="number" step="any" min="0" max="100"
             className="w-28 px-3 py-2 border border-[#c9a876]/40 rounded-lg text-sm font-black bg-[#c9a876]/10 text-center"
             value={vendorCommission}
             onChange={(e) => setVendorCommission(e.target.value)}
@@ -151,7 +151,7 @@ export const FinanceSettingsCard: React.FC<FinanceSettingsCardProps> = ({ settin
 
       <div className="border-t border-slate-100 pt-3">
         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
-          Costos por prenda vendida <span className="normal-case text-slate-400">(planchado, bolsa, plástico, etiqueta...)</span>
+          Preparación y empaque por prenda vendida <span className="normal-case text-slate-400">(planchado, bolsa, plástico, etiqueta...)</span>
         </p>
         <div className="space-y-2">
           {unitCosts.map((u) => (
@@ -164,7 +164,7 @@ export const FinanceSettingsCard: React.FC<FinanceSettingsCardProps> = ({ settin
                 onChange={(e) => updateUnitCost(u.id, { label: e.target.value })}
               />
               <input
-                type="number" step="0.01" min="0"
+                type="number" step="any" min="0"
                 className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-center"
                 placeholder="Q"
                 value={u.amount}
@@ -179,7 +179,7 @@ export const FinanceSettingsCard: React.FC<FinanceSettingsCardProps> = ({ settin
           onClick={addUnitCost}
           className="w-full mt-2 py-1.5 border-2 border-dashed border-slate-200 rounded-lg text-[10px] font-black text-slate-400 hover:border-[#2bb297] hover:text-[#1a8a72] transition uppercase"
         >
-          + Agregar costo por prenda
+          + Agregar costo de preparación o empaque
         </button>
       </div>
 

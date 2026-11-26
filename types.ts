@@ -113,7 +113,17 @@ export interface ReservationItem {
   name: string;
   code: string;
   quantity: number;
+  // Precio por unidad CONGELADO el día que se hizo el apartado (ya con el
+  // descuento del lote de ese día, si lo había). No se recalcula nunca: aunque
+  // el lote pase a descuento después, la clienta paga lo que quedó aquí.
   pricePerUnit: number;
+  // Lote elegido al apartar (de ahí se descontó el stock y de ahí se devuelve si
+  // el apartado se libera). Ausente en apartados viejos.
+  lotId?: string;
+  lotLabel?: string; // ej. "VERDE 23/11"
+  lotColor?: string; // ej. "Verde" — para pintar la etiqueta de color
+  basePrice?: number; // precio normal (sin descuento) al momento de apartar
+  priceNote?: string; // ej. "Precio rebajado (-15%)" — la etapa del lote cuando se apartó
 }
 
 export interface Payment {

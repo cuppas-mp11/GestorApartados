@@ -92,7 +92,7 @@ export const GarmentPriceCard: React.FC<GarmentPriceCardProps> = ({ entries, ali
             <div>
               <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Precio por prenda (Q)</label>
               <input
-                type="number" step="0.01" min="0"
+                type="number" step="any" min="0"
                 className="w-full px-3 py-2 border border-[#2bb297]/30 rounded-lg text-sm font-black bg-white text-center"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}

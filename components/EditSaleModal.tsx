@@ -193,7 +193,7 @@ export const EditSaleModal: React.FC<EditSaleModalProps> = ({ sale, inventory, l
                         <div>
                           <p className="text-[9px] font-black text-[#8c3a4b] uppercase">Descuento</p>
                           <input
-                            type="number" min="0" step="0.01" max={subtotal}
+                            type="number" min="0" step="any" max={subtotal}
                             className="w-20 px-2 py-1 border border-slate-200 rounded-md text-xs font-bold"
                             value={item.discount || ''}
                             onChange={(e) => updateItem(item.id, { discount: Math.max(0, Math.min(subtotal, parseFloat(e.target.value) || 0)) })}
@@ -234,7 +234,7 @@ export const EditSaleModal: React.FC<EditSaleModalProps> = ({ sale, inventory, l
                       ))}
                     </select>
                     <input
-                      type="number" min="0" step="0.01"
+                      type="number" min="0" step="any"
                       className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-xs font-bold text-right"
                       value={p.amount || ''}
                       onChange={(e) => updatePayment(p.id, { amount: parseFloat(e.target.value) || 0 })}

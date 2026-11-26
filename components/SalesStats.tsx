@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sale, SaleStatus, PaymentMethod } from '../types';
-import { formatCurrency, getSaleTotal, getSaleItemsCount, PAYMENT_METHODS, getSaleItemTotal, isSameLocalDay } from '../utils';
+import { formatCurrency, getSaleTotal, getSaleItemsCount, PAYMENT_METHODS, getSaleItemTotal, isSameLocalDay, formatTodayLabel } from '../utils';
 
 interface SalesStatsProps {
   sales: Sale[];
@@ -37,6 +37,7 @@ export const SalesStats: React.FC<SalesStatsProps> = ({ sales }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Ventas de Hoy</p>
+          <p className="text-[11px] font-black text-[#8a6a3f] mt-0.5">{formatTodayLabel()}</p>
           <p className="text-3xl font-black text-[#1a8a72] mt-2">{todaySales.length}</p>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
