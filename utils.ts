@@ -1,5 +1,5 @@
 import {
-  DailyClosing, Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
+  CashPurchase, DailyClosing, Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
   GarmentPriceEntry, Expense, ExpenseCategoryItem, ExpenseTemplate,
   UnitCostItem, FinanceSettings, LotColorSettings, LotStage, InventoryItem,
 } from './types';
@@ -599,6 +599,24 @@ export const getCashSalesSince = (sales: Sale[], previous: DailyClosing | undefi
       return d <= untilDate && (previous ? d > previous.date : d === untilDate);
     })
     .reduce((acc, s) => acc + s.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0), 0);
+
+// Compras de caja chica (activas, no anuladas) hechas DESPUÉS del cierre anterior
+// hasta la fecha indicada (incluida). Misma lógica que el efectivo cobrado.
+export const getPurchasesSince = (purchases: CashPurchase[], previous: DailyClosing | undefined, untilDate: string): number =>
+  purchases
+    .filter((p) => p.status === 'ACTIVE')
+    .filter((p) => p.date <= untilDate && (previous ? p.date > previous.date : p.date === untilDate))
+    .reduce((acc, p) => acc + (p.amount || 0), 0);
+
+// Caja chica "ahora", según el sistema: lo que quedó en el último cierre + efectivo
+// cobrado desde entonces − compras desde entonces. Sin ningún cierre todavía no hay base.
+export const getPettyCashSnapshot = (closings: DailyClosing[], sales: Sale[], purchases: CashPurchase[], todayStr: string) => {
+  const last = [...closings].filter((c) => c.date <= todayStr).sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!last) return null;
+  const cashSince = getCashSalesSince(sales, last, todayStr);
+  const purchasesSince = getPurchasesSince(purchases, last, todayStr);
+  return { baseDate: last.date, base: last.keptInBox, cashSince, purchasesSince, balance: last.keptInBox + cashSince - purchasesSince };
+};
 
 // Estado del efectivo de un cierre, para mostrarlo con color.
 export const getCashStatus = (closing: Pick<DailyClosing, 'difference'>): { label: string; ok: boolean } => {

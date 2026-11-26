@@ -27,6 +27,7 @@ import {
   StockAllocation,
   CreditTransaction,
   DailyClosing,
+  CashPurchase,
   GarmentPriceEntry,
   Expense,
   ExpenseCategoryItem,
@@ -47,6 +48,7 @@ import { ExportMenu } from './components/ExportMenu';
 import { GarmentPriceCard } from './components/GarmentPriceCard';
 import { ConfirmHost, confirmDialog } from './components/ConfirmDialog';
 import { DailyClosingButton } from './components/DailyClosingButton';
+import { PurchasesPanel } from './components/PurchasesPanel';
 import { ClosingsPanel } from './components/ClosingsPanel';
 import { ExpensesPanel } from './components/ExpensesPanel';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
@@ -71,6 +73,8 @@ import {
   getDayClosingTotals,
   getPreviousClosing,
   getCashSalesSince,
+  getPurchasesSince,
+  getPettyCashSnapshot,
   aggregateStockNeeds,
   getCandidateLotsForCode,
   formatCurrency,
@@ -87,6 +91,7 @@ const LOTS_COLLECTION = 'lots';
 const SALES_COLLECTION = 'sales';
 const CREDIT_LEDGER_COLLECTION = 'creditLedger';
 const DAILY_CLOSINGS_COLLECTION = 'dailyClosings';
+const CASH_PURCHASES_COLLECTION = 'cashPurchases';
 const LOT_COLOR_SETTINGS_COLLECTION = 'lotColorSettings';
 const LOT_COLOR_SETTINGS_DOC_ID = 'config';
 const GARMENT_PRICE_DOC_ID = 'garmentPrice'; // settings/garmentPrice: historial de Precio por prenda
@@ -116,6 +121,7 @@ const App: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [creditLedger, setCreditLedger] = useState<CreditTransaction[]>([]);
   const [closings, setClosings] = useState<DailyClosing[]>([]);
+  const [purchases, setPurchases] = useState<CashPurchase[]>([]);
   const [garmentPrices, setGarmentPrices] = useState<GarmentPriceEntry[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryItem[]>([]);
   const [expenseTemplates, setExpenseTemplates] = useState<ExpenseTemplate[]>([]);
@@ -258,6 +264,16 @@ const App: React.FC = () => {
       (error) => console.error('Error leyendo cierres del día:', error)
     );
 
+    const unsubPurchases = onSnapshot(
+      collection(db, CASH_PURCHASES_COLLECTION),
+      (snapshot) => {
+        const data = snapshot.docs.map((d) => d.data() as CashPurchase);
+        data.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+        setPurchases(data);
+      },
+      (error) => console.error('Error leyendo compras:', error)
+    );
+
     // Configuración de colores de lotes: cualquier usuario autenticado la lee
     // (la vendedora la necesita para saber a qué precio vender), pero solo un
     // admin puede cambiarla (ver GUIA_FIREBASE.md).
@@ -269,6 +285,7 @@ const App: React.FC = () => {
 
     return () => {
       unsubReservations();
+      unsubPurchases();
       unsubInventory();
       unsubCustomers();
       unsubLots();
@@ -706,7 +723,8 @@ const App: React.FC = () => {
     const t = getDayClosingTotals(sales, date);
     const previous = getPreviousClosing(closings, date);
     const cashSales = getCashSalesSince(sales, previous, date);
-    const expectedCash = input.openingCash + cashSales;
+    const purchasesTotal = getPurchasesSince(purchases, previous, date);
+    const expectedCash = input.openingCash + cashSales - purchasesTotal;
     const closing: DailyClosing = {
       id: date,
       date,
@@ -720,6 +738,7 @@ const App: React.FC = () => {
       byMethod: t.byMethod,
       openingCash: input.openingCash,
       cashSales,
+      purchasesTotal,
       expectedCash,
       countedCash: input.countedCash,
       difference: input.countedCash - expectedCash,
@@ -729,6 +748,31 @@ const App: React.FC = () => {
     };
     await setDoc(doc(db, DAILY_CLOSINGS_COLLECTION, date), closing);
     return closing;
+  };
+
+  // Compras pagadas de la caja chica. Una compra mal registrada no se borra: se anula.
+  const addPurchase = async (input: { date: string; description: string; amount: number; note: string }) => {
+    const id = `cp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const purchase: CashPurchase = {
+      id,
+      date: input.date,
+      description: input.description,
+      amount: input.amount,
+      ...(input.note ? { note: input.note } : {}),
+      status: 'ACTIVE',
+      createdByEmail: user?.email || 'desconocido',
+      createdByUid: user?.uid || '',
+      createdAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, CASH_PURCHASES_COLLECTION, id), purchase);
+  };
+
+  const voidPurchase = async (purchase: CashPurchase) => {
+    await updateDoc(doc(db, CASH_PURCHASES_COLLECTION, purchase.id), {
+      status: 'VOIDED',
+      voidedByEmail: user?.email || 'desconocido',
+      voidedAt: new Date().toISOString(),
+    });
   };
 
   const markClosingSeen = async (closing: DailyClosing) => {
@@ -1334,6 +1378,7 @@ const App: React.FC = () => {
   const pageTitles: Record<Page, string> = {
     inicio: 'Inicio',
     apartados: 'Apartados',
+    compras: 'Compras',
     ventas: 'Ventas',
     inventario: 'Inventario',
     clientes: 'Clientes',
@@ -1538,7 +1583,7 @@ const App: React.FC = () => {
                 {saleMode === 'quick' ? (
                   <div className="flex flex-wrap items-center gap-3">
                     <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} lotColorSettings={lotColorSettings} />
-                    <DailyClosingButton sales={sales} closings={closings} aliases={aliases} onSend={sendDailyClosing} />
+                    <DailyClosingButton sales={sales} closings={closings} purchases={purchases} aliases={aliases} onSend={sendDailyClosing} />
                   </div>
                 ) : (
                   <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
@@ -1615,6 +1660,19 @@ const App: React.FC = () => {
             </div>
           )}
 
+          {/* ---------------- PÁGINA: COMPRAS (caja chica) ---------------- */}
+          {page === 'compras' && (
+            <PurchasesPanel
+              purchases={purchases}
+              snapshot={getPettyCashSnapshot(closings, sales, purchases, getLocalDateStr())}
+              role={role}
+              currentUid={user?.uid || ''}
+              aliases={aliases}
+              onAdd={addPurchase}
+              onVoid={voidPurchase}
+            />
+          )}
+
           {/* ---------------- PÁGINA: CLIENTES ---------------- */}
           {page === 'clientes' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
@@ -1644,6 +1702,7 @@ const App: React.FC = () => {
                   <ProfitabilitySummary
                     sales={sales}
                     expenses={expenses}
+                    purchases={purchases}
                     categories={expenseCategories}
                     garmentPrices={garmentPrices}
                     settings={financeSettings}

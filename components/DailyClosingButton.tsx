@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { DailyClosing, Sale } from '../types';
-import { formatCurrency, formatDate, formatTodayLabel, getDayClosingTotals, getCashStatus, getDisplayName, getLocalDateStr, getPreviousClosing, getCashSalesSince, PAYMENT_METHODS } from '../utils';
+import { CashPurchase, DailyClosing, Sale } from '../types';
+import { formatCurrency, formatDate, formatTodayLabel, getDayClosingTotals, getCashStatus, getDisplayName, getLocalDateStr, getPreviousClosing, getCashSalesSince, getPurchasesSince, PAYMENT_METHODS } from '../utils';
 import { buildDayReportPdf, dayReportFileName, downloadPdf, sharePdf } from '../reportPdf';
 
 interface DailyClosingButtonProps {
   sales: Sale[];
   closings: DailyClosing[];
+  purchases: CashPurchase[];
   aliases: Record<string, string>;
   onSend: (input: { openingCash: number; countedCash: number; sentToAdmin: number; note: string }) => Promise<DailyClosing>;
 }
 
 // Botón "Cerrar el día": la vendedora cuenta el efectivo de la caja, el sistema
 // lo compara con lo que él calcula y envía el cierre a la administradora.
-export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, closings, aliases, onSend }) => {
+export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, closings, purchases, aliases, onSend }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [counted, setCounted] = useState('');
   const [opening, setOpening] = useState('');
@@ -30,11 +31,12 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
   // Caja corriente: lo que quedó en caja en el cierre anterior es el efectivo de apertura de hoy.
   const previous = getPreviousClosing(closings, today);
   const cashSales = getCashSalesSince(sales, previous, today);
+  const purchasesTotal = getPurchasesSince(purchases, previous, today);
   const isFriday = new Date().getDay() === 5;
 
   const openingNum = previous ? previous.keptInBox : parseFloat(opening);
   const openingValid = previous ? true : opening.trim() !== '' && !isNaN(openingNum) && openingNum >= 0;
-  const expectedCash = (openingValid ? openingNum : 0) + cashSales;
+  const expectedCash = (openingValid ? openingNum : 0) + cashSales - purchasesTotal;
 
   const countedNum = parseFloat(counted);
   const hasCounted = counted.trim() !== '' && !isNaN(countedNum) && countedNum >= 0;
@@ -147,7 +149,7 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
                   </p>
                   <p className="text-[11px] font-bold text-slate-500 mt-1">
                     {saved.sentToAdmin > 0 && <>Enviado a la administradora: {formatCurrency(saved.sentToAdmin)} · </>}
-                    Se queda en caja: <span className="font-black text-slate-700">{formatCurrency(saved.keptInBox)}</span>
+                    Se queda en caja chica: <span className="font-black text-slate-700">{formatCurrency(saved.keptInBox)}</span>
                   </p>
                 </div>
                 <p className="text-[11px] text-slate-500 font-bold">Si quieres, también puedes llevarte el reporte en PDF:</p>
@@ -191,17 +193,17 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
                   </div>
 
                   <div className="border-2 border-[#2bb297]/30 rounded-xl p-4 space-y-3">
-                    <p className="text-[10px] font-black text-[#1a8a72] uppercase tracking-widest">Caja (efectivo)</p>
+                    <p className="text-[10px] font-black text-[#1a8a72] uppercase tracking-widest">Caja chica (efectivo)</p>
 
                     {previous ? (
                       <div className="flex justify-between text-sm">
-                        <span className="font-bold text-slate-500">Con lo que abriste <span className="text-[10px] text-slate-400">(quedó el {formatDate(previous.date)})</span></span>
+                        <span className="font-bold text-slate-500">Caja chica con la que abriste <span className="text-[10px] text-slate-400">(quedó el {formatDate(previous.date)})</span></span>
                         <span className="font-black text-slate-700">{formatCurrency(previous.keptInBox)}</span>
                       </div>
                     ) : (
                       <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
-                          Efectivo con que abriste la caja hoy (Q) <span className="normal-case text-slate-400">— primer cierre</span>
+                          Caja chica con la que abriste hoy (Q) <span className="normal-case text-slate-400">— primer cierre</span>
                         </label>
                         <input
                           type="number" step="any" min="0" inputMode="decimal"
@@ -216,14 +218,18 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
                       <span className="font-bold text-slate-500">+ Cobrado en efectivo{previous ? ' desde el último cierre' : ' hoy'}</span>
                       <span className="font-black text-slate-700">{formatCurrency(cashSales)}</span>
                     </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="font-bold text-slate-500">− Compras pagadas de caja chica</span>
+                      <span className="font-black text-[#8c3a4b]">{purchasesTotal > 0 ? `-${formatCurrency(purchasesTotal)}` : formatCurrency(0)}</span>
+                    </div>
                     <div className="flex justify-between text-sm border-t border-slate-200 pt-2">
-                      <span className="font-black text-slate-700 uppercase">Disponible en caja (sistema)</span>
+                      <span className="font-black text-slate-700 uppercase">Disponible en caja chica (sistema)</span>
                       <span className="font-black text-[#1a8a72]">{formatCurrency(expectedCash)}</span>
                     </div>
 
                     <div>
                       <label className="block text-[10px] font-black text-[#1a8a72] uppercase mb-1">
-                        Efectivo contado en caja (Q) <span className="normal-case text-slate-400">— cuenta los billetes y monedas</span>
+                        Efectivo contado en caja chica (Q) <span className="normal-case text-slate-400">— cuenta los billetes y monedas</span>
                       </label>
                       <input
                         type="number"
@@ -274,7 +280,7 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
 
                     {hasCounted && sentValid && (
                       <div className="flex justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
-                        <span className="font-black text-slate-600 uppercase">Se queda en caja</span>
+                        <span className="font-black text-slate-600 uppercase">Se queda en caja chica</span>
                         <span className="font-black text-slate-800">{formatCurrency(keptNum)}</span>
                       </div>
                     )}
@@ -287,7 +293,7 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
-                      placeholder="Ej. Se pagó el flete de caja chica"
+                      placeholder="Ej. Algo que la administradora deba saber"
                     />
                   </div>
 

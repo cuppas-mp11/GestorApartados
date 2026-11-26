@@ -374,9 +374,10 @@ export interface DailyClosing {
   // Caja corriente: efectivo con que se abrió + efectivo cobrado desde el cierre
   // anterior = efectivo esperado. La vendedora cuenta, y lo que NO se envía a la
   // administradora se queda en caja y es el "efectivo de apertura" del siguiente cierre.
-  openingCash: number; // efectivo con que arrancó (lo que quedó en caja en el cierre anterior)
+  openingCash: number; // caja chica con que arrancó (lo que quedó en caja en el cierre anterior)
   cashSales: number; // efectivo cobrado en ventas desde el cierre anterior
-  expectedCash: number; // openingCash + cashSales
+  purchasesTotal: number; // compras pagadas de la caja chica desde el cierre anterior
+  expectedCash: number; // openingCash + cashSales - purchasesTotal
   countedCash: number; // efectivo que contó la vendedora
   difference: number; // contado - esperado (positivo = sobra, negativo = falta)
   sentToAdmin: number; // efectivo que se separó para enviar a la administradora (ej. cada viernes)
@@ -385,4 +386,24 @@ export interface DailyClosing {
   // Lo marca la administradora al revisarlo
   seenByEmail?: string;
   seenAt?: string;
+}
+
+// ---- Compras pagadas de la caja chica ----
+// Cuando la vendedora saca dinero de la caja chica para comprar algo de la tienda
+// (mantenimiento del local, bolsas, limpieza...), lo registra aquí con el detalle
+// y el monto. Esto resta de la caja chica en el cierre del día y, además, cuenta
+// como gasto en el Resumen de rentabilidad. Una compra mal registrada no se borra:
+// se ANULA (queda el rastro, igual que las ventas).
+export interface CashPurchase {
+  id: string;
+  date: string; // YYYY-MM-DD
+  description: string; // qué se compró
+  amount: number;
+  note?: string;
+  status: 'ACTIVE' | 'VOIDED';
+  createdByEmail: string;
+  createdByUid: string;
+  createdAt: string;
+  voidedByEmail?: string;
+  voidedAt?: string;
 }

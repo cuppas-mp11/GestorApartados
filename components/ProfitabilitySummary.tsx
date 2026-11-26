@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { downloadStyledExcel, Cell } from '../excelStyle';
-import { Sale, Expense, ExpenseCategoryItem, GarmentPriceEntry, FinanceSettings } from '../types';
+import { Sale, Expense, CashPurchase, ExpenseCategoryItem, GarmentPriceEntry, FinanceSettings } from '../types';
 import {
   formatCurrency,
   formatDate,
@@ -19,6 +19,7 @@ import {
 interface ProfitabilitySummaryProps {
   sales: Sale[];
   expenses: Expense[];
+  purchases: CashPurchase[];
   categories: ExpenseCategoryItem[];
   garmentPrices: GarmentPriceEntry[];
   settings: FinanceSettings;
@@ -32,7 +33,7 @@ const firstOfMonthStr = () => {
 };
 
 export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
-  sales, expenses, categories, garmentPrices, settings, aliases,
+  sales, expenses, purchases, categories, garmentPrices, settings, aliases,
 }) => {
   const [start, setStart] = useState(firstOfMonthStr());
   const [end, setEnd] = useState(todayStr());
@@ -42,7 +43,9 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
   const unitCostsExtra = getUnitCostsTotal(settings.unitCosts || []);
 
   const breakdown = calculateProfitability(rangeSales, garmentPrices, settings);
-  const expensesTotal = getExpensesTotal(rangeExpenses);
+  // Las compras pagadas de caja chica también son gasto del negocio: se suman aquí para no registrarlas dos veces.
+  const rangePurchases = purchases.filter((p) => p.status === 'ACTIVE' && p.date >= start && p.date <= end);
+  const expensesTotal = getExpensesTotal(rangeExpenses) + rangePurchases.reduce((a, p) => a + (p.amount || 0), 0);
   const finalProfit = breakdown.profitAfterCommission - expensesTotal;
 
   // Precio(s) por prenda usados en este rango (normalmente uno; varios si el precio cambió dentro del periodo)
@@ -73,7 +76,10 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
       ['Gastos fijos/variables del periodo', -expensesTotal],
       ['GANANCIA FINAL', finalProfit],
     ];
-    const sorted = [...rangeExpenses].sort((a, b) => a.date.localeCompare(b.date));
+    const sorted: { date: string; cat: string; freq: string; amount: number; note: string }[] = [
+      ...rangeExpenses.map((e) => ({ date: e.date, cat: getExpenseCategoryLabel(e.categoryId, categories), freq: e.frequency === 'fixed' ? 'Fijo' : 'Variable', amount: e.amount, note: e.note || '' })),
+      ...rangePurchases.map((p) => ({ date: p.date, cat: 'Caja chica', freq: 'Compra', amount: p.amount, note: p.description + (p.note ? ` — ${p.note}` : '') })),
+    ].sort((a, b) => a.date.localeCompare(b.date));
 
     await downloadStyledExcel(`Rentabilidad_${start}_a_${end}.xlsx`, [
       {
@@ -124,7 +130,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
               { header: 'Monto', type: 'money' },
               { header: 'Nota' },
             ],
-            rows: sorted.map((e) => [formatDate(e.date), getExpenseCategoryLabel(e.categoryId, categories), e.frequency === 'fixed' ? 'Fijo' : 'Variable', e.amount, e.note || '']),
+            rows: sorted.map((e) => [formatDate(e.date), e.cat, e.freq, e.amount, e.note]),
             total: sorted.length > 0 ? ['TOTAL', '', '', expensesTotal, ''] : undefined,
           },
         ],
@@ -177,7 +183,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
         <Row label="Ganancia neta" value={breakdown.netProfit} bold divider />
         <Row label="Comisión de vendedora" value={-breakdown.vendorCommission} sub={`${settings.vendorCommissionPercent || 0}% de la ganancia neta`} />
         <Row label="Ganancia después de comisión" value={breakdown.profitAfterCommission} bold />
-        <Row label="Gastos del periodo" value={-expensesTotal} sub={`${rangeExpenses.length} registro(s)`} />
+        <Row label="Gastos del periodo" value={-expensesTotal} sub={`${rangeExpenses.length} registro(s)${rangePurchases.length > 0 ? ` + ${rangePurchases.length} compra(s) de caja chica` : ''}`} />
         <Row label="GANANCIA FINAL" value={finalProfit} bold big divider />
       </div>
 

@@ -52,7 +52,7 @@ export const ClosingsPanel: React.FC<ClosingsPanelProps> = ({ closings, sales, a
 
       <div className="grid grid-cols-2 gap-2 mb-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
-          <p className="text-[9px] font-black text-slate-400 uppercase">En caja (último cierre)</p>
+          <p className="text-[9px] font-black text-slate-400 uppercase">Caja chica (último cierre)</p>
           <p className="text-lg font-black text-slate-800">{formatCurrency(latest.keptInBox)}</p>
           <p className="text-[9px] text-slate-400 font-bold">al {formatDate(latest.date)}</p>
         </div>
@@ -103,8 +103,8 @@ export const ClosingsPanel: React.FC<ClosingsPanelProps> = ({ closings, sales, a
 
               <p className="text-[11px] font-bold text-slate-600 mt-1.5">
                 {c.sentToAdmin > 0 && <span className="text-[#8a6a3f]">Enviado a la administradora: {formatCurrency(c.sentToAdmin)} · </span>}
-                Queda en caja: {formatCurrency(c.keptInBox)}
-                <span className="text-slate-400"> (abrió con {formatCurrency(c.openingCash)} + {formatCurrency(c.cashSales)} cobrado)</span>
+                Queda en caja chica: {formatCurrency(c.keptInBox)}
+                <span className="text-slate-400"> (abrió con {formatCurrency(c.openingCash)} + {formatCurrency(c.cashSales)} cobrado{c.purchasesTotal > 0 ? ` − ${formatCurrency(c.purchasesTotal)} en compras` : ''})</span>
               </p>
               <p className="text-[10px] text-slate-400 font-bold mt-1">
                 {PAYMENT_METHODS.filter((m) => (c.byMethod?.[m.value] || 0) > 0).map((m) => `${m.label}: ${formatCurrency(c.byMethod[m.value])}`).join(' · ')}

@@ -110,7 +110,7 @@ export const buildDayReportPdf = async (
       const right = { halign: 'right' as const };
       // Filas (contando desde 0) que llevan una línea negra gruesa debajo: separan
       // los grupos de datos (de dónde sale el efectivo / lo esperado / lo enviado / lo que queda).
-      const THICK_BELOW_ROWS = [1, 2, 4, 5];
+      const THICK_BELOW_ROWS = [2, 3, 5, 6];
 
       let y = (doc as any).lastAutoTable.finalY + 10;
       if (y + 80 > doc.internal.pageSize.getHeight()) {
@@ -120,11 +120,12 @@ export const buildDayReportPdf = async (
 
       autoTable(doc, {
         startY: y,
-        head: [['Cierre de caja (efectivo)', { content: 'Monto', styles: { halign: 'right' } }]],
+        head: [['Cierre de caja chica (efectivo)', { content: 'Monto', styles: { halign: 'right' } }]],
         body: [
           // Grupo 1: de dónde sale el efectivo
-          ['Efectivo con que abrió la caja', { content: formatCurrency(closing.openingCash), styles: right }],
+          ['Caja chica (con lo que abrió)', { content: formatCurrency(closing.openingCash), styles: right }],
           ['+ Cobrado en efectivo', { content: formatCurrency(closing.cashSales), styles: right }],
+          ['− Compras pagadas de caja chica', { content: (closing.purchasesTotal || 0) > 0 ? `-${formatCurrency(closing.purchasesTotal)}` : formatCurrency(0), styles: right }],
           // Grupo 2: lo que el sistema espera
           [{ content: 'Disponible según el sistema', styles: bold }, { content: formatCurrency(closing.expectedCash), styles: { ...bold, ...right } }],
           // Grupo 3: lo que se contó (resaltado en verde claro)
@@ -135,7 +136,7 @@ export const buildDayReportPdf = async (
           ['Enviado a la administradora', { content: formatCurrency(closing.sentToAdmin || 0), styles: right }],
           // Grupo 4: lo que queda (resaltado en gris)
           [
-            { content: 'Se queda en caja', styles: { ...bold, fillColor: [229, 229, 229] } },
+            { content: 'Se queda en caja chica', styles: { ...bold, fillColor: [229, 229, 229] } },
             { content: formatCurrency(closing.keptInBox), styles: { ...bold, ...right, fillColor: [229, 229, 229] } },
           ],
         ],

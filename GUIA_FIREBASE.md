@@ -710,3 +710,112 @@ service cloud.firestore {
 ```
 
 Clic en **"Publicar"**. Mientras no publiques las reglas, el botón "Cerrar el día" mostrará "No se pudo enviar el cierre".
+
+---
+
+## Paso 16: Caja chica + sección "Compras" — ⚠️ requiere actualizar las reglas
+
+- **"Efectivo con que abrió la caja" ahora se llama "Caja chica"** en el cierre, el PDF y el panel de la administradora.
+- Nueva sección **Compras** (menú, para vendedora y admin): se anota **qué se compró** y **cuánto se gastó** y se pulsa "Guardar compra". Queda un historial por día con total diario y filtro por fechas. La vendedora solo registra con la fecha de hoy y puede **anular** sus compras del mismo día; la admin puede registrar con otra fecha y anular cualquiera. Las compras anuladas no se borran, quedan tachadas.
+- **Caja chica del sistema** = lo que quedó en el último cierre + efectivo cobrado − compras. El cierre del día ahora resta las compras, así que **cuadra** aunque se haya sacado dinero para el local.
+- En **Finanzas**, las compras de caja chica cuentan como gasto del periodo (y salen en el Excel de gastos como "Caja chica"), sin tener que anotarlas dos veces.
+
+**Publica las reglas ANTES de subir el código a GitHub.** Reemplaza TODO en Firestore → Reglas por:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /roles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /reservations/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null && (
+        request.resource.data.status != 'DELETED' ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /inventory/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /customers/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /lots/{id} {
+      allow read, create: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow update: if request.auth != null;
+    }
+    match /editLogs/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /sales/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /creditLedger/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacas/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacaReconciliations/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseCategories/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseTemplates/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenses/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /settings/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /lotColorSettings/{id} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /dailyClosings/{id} {
+      // Cierre del día: la vendedora lo crea/actualiza y la administradora lo marca como visto.
+      allow read, create, update: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /cashPurchases/{id} {
+      // Compras de caja chica: cualquiera crea; anular (update) solo el admin o quien la registró; borrar solo admin.
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null && (
+        resource.data.createdByUid == request.auth.uid ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin');
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
+```
+
+Clic en **"Publicar"**. Sin estas reglas, la sección Compras no podrá guardar ni leer.
