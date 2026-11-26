@@ -17,6 +17,7 @@ export const RESET_OPTIONS: ResetCollectionOption[] = [
   { key: 'lots', label: 'Lotes de mercadería', defaultChecked: true },
   { key: 'creditLedger', label: 'Bitácora de saldo a favor', defaultChecked: true },
   { key: 'editLogs', label: 'Historial de ediciones', defaultChecked: true },
+  { key: 'dailyClosings', label: 'Cierres del día', defaultChecked: true },
   { key: 'expenses', label: 'Gastos registrados', defaultChecked: true },
   { key: 'pacas', label: 'Catálogo de pacas', defaultChecked: true },
   { key: 'pacaReconciliations', label: 'Costeos por sticker', defaultChecked: true },

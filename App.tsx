@@ -26,6 +26,7 @@ import {
   SaleStatus,
   StockAllocation,
   CreditTransaction,
+  DailyClosing,
   GarmentPriceEntry,
   Expense,
   ExpenseCategoryItem,
@@ -45,6 +46,8 @@ import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
 import { GarmentPriceCard } from './components/GarmentPriceCard';
 import { ConfirmHost, confirmDialog } from './components/ConfirmDialog';
+import { DailyClosingButton } from './components/DailyClosingButton';
+import { ClosingsPanel } from './components/ClosingsPanel';
 import { ExpensesPanel } from './components/ExpensesPanel';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
 import { ProfitabilitySummary } from './components/ProfitabilitySummary';
@@ -65,6 +68,9 @@ import {
   getTotalPrice,
   getTotalPaid,
   getNextCustomerCode,
+  getDayClosingTotals,
+  getPreviousClosing,
+  getCashSalesSince,
   aggregateStockNeeds,
   getCandidateLotsForCode,
   formatCurrency,
@@ -80,6 +86,7 @@ const CUSTOMERS_COLLECTION = 'customers';
 const LOTS_COLLECTION = 'lots';
 const SALES_COLLECTION = 'sales';
 const CREDIT_LEDGER_COLLECTION = 'creditLedger';
+const DAILY_CLOSINGS_COLLECTION = 'dailyClosings';
 const LOT_COLOR_SETTINGS_COLLECTION = 'lotColorSettings';
 const LOT_COLOR_SETTINGS_DOC_ID = 'config';
 const GARMENT_PRICE_DOC_ID = 'garmentPrice'; // settings/garmentPrice: historial de Precio por prenda
@@ -108,6 +115,7 @@ const App: React.FC = () => {
   const [lotColorSettings, setLotColorSettings] = useState<LotColorSettings>(DEFAULT_LOT_COLOR_SETTINGS);
   const [sales, setSales] = useState<Sale[]>([]);
   const [creditLedger, setCreditLedger] = useState<CreditTransaction[]>([]);
+  const [closings, setClosings] = useState<DailyClosing[]>([]);
   const [garmentPrices, setGarmentPrices] = useState<GarmentPriceEntry[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryItem[]>([]);
   const [expenseTemplates, setExpenseTemplates] = useState<ExpenseTemplate[]>([]);
@@ -244,6 +252,12 @@ const App: React.FC = () => {
       (error) => console.error('Error leyendo saldos:', error)
     );
 
+    const unsubClosings = onSnapshot(
+      collection(db, DAILY_CLOSINGS_COLLECTION),
+      (snapshot) => setClosings(snapshot.docs.map((d) => d.data() as DailyClosing)),
+      (error) => console.error('Error leyendo cierres del día:', error)
+    );
+
     // Configuración de colores de lotes: cualquier usuario autenticado la lee
     // (la vendedora la necesita para saber a qué precio vender), pero solo un
     // admin puede cambiarla (ver GUIA_FIREBASE.md).
@@ -260,6 +274,7 @@ const App: React.FC = () => {
       unsubLots();
       unsubSales();
       unsubCreditLedger();
+      unsubClosings();
       unsubLotColorSettings();
     };
   }, [user]);
@@ -676,6 +691,52 @@ const App: React.FC = () => {
       editedAt: now,
     };
     await setDoc(doc(db, 'editLogs', logEntry.id), logEntry);
+  };
+
+  // Cierre del día: guarda los totales de HOY (calculados con las ventas
+  // actuales) y el efectivo contado por la vendedora. Un cierre por día; si se
+  // vuelve a enviar, se actualiza y la administradora lo vuelve a ver como nuevo.
+  const sendDailyClosing = async (input: {
+    openingCash: number;
+    countedCash: number;
+    sentToAdmin: number;
+    note: string;
+  }): Promise<DailyClosing> => {
+    const date = getLocalDateStr();
+    const t = getDayClosingTotals(sales, date);
+    const previous = getPreviousClosing(closings, date);
+    const cashSales = getCashSalesSince(sales, previous, date);
+    const expectedCash = input.openingCash + cashSales;
+    const closing: DailyClosing = {
+      id: date,
+      date,
+      closedByEmail: user?.email || 'desconocido',
+      closedAt: new Date().toISOString(),
+      salesCount: t.salesCount,
+      itemsCount: t.itemsCount,
+      totalSold: t.totalSold,
+      discountTotal: t.discountTotal,
+      cancelledCount: t.cancelledCount,
+      byMethod: t.byMethod,
+      openingCash: input.openingCash,
+      cashSales,
+      expectedCash,
+      countedCash: input.countedCash,
+      difference: input.countedCash - expectedCash,
+      sentToAdmin: input.sentToAdmin,
+      keptInBox: input.countedCash - input.sentToAdmin,
+      ...(input.note ? { note: input.note } : {}),
+    };
+    await setDoc(doc(db, DAILY_CLOSINGS_COLLECTION, date), closing);
+    return closing;
+  };
+
+  const markClosingSeen = async (closing: DailyClosing) => {
+    if (role !== 'admin') return;
+    await updateDoc(doc(db, DAILY_CLOSINGS_COLLECTION, closing.id), {
+      seenByEmail: user?.email || 'desconocido',
+      seenAt: new Date().toISOString(),
+    });
   };
 
   // Corrección manual (solo admin) del precio congelado de una prenda de un
@@ -1283,7 +1344,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#e8f7f2] lg:flex">
       <ConfirmHost />
-      <Sidebar page={page} setPage={setPage} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar page={page} setPage={setPage} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} badges={role === 'admin' ? { ventas: closings.filter((c) => !c.seenAt).length } : undefined} />
 
       <div className="flex-1 min-w-0">
         {/* Barra superior */}
@@ -1451,6 +1512,7 @@ const App: React.FC = () => {
                   <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest">Resumen</h2>
                   <SalesExportMenu sales={sales} aliases={aliases} />
                 </div>
+                <ClosingsPanel closings={closings} sales={sales} aliases={aliases} role={role} onMarkSeen={markClosingSeen} />
                 <SalesStats sales={sales} />
                 <TodaySalesHistory sales={sales} role={role} onCancelSale={cancelSale} onEditSale={setEditingSale} />
               </div>
@@ -1474,7 +1536,10 @@ const App: React.FC = () => {
                 </div>
 
                 {saleMode === 'quick' ? (
-                  <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} lotColorSettings={lotColorSettings} />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} lotColorSettings={lotColorSettings} />
+                    <DailyClosingButton sales={sales} closings={closings} aliases={aliases} onSend={sendDailyClosing} />
+                  </div>
                 ) : (
                   <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
                 )}

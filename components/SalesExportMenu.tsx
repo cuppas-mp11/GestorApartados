@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { downloadStyledExcel, SheetSpec, Cell } from '../excelStyle';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { buildDayReportPdf, downloadPdf, dayReportFileName } from '../reportPdf';
 import { Sale, SaleStatus, PaymentMethod } from '../types';
 import { formatCurrency, formatDate, getSaleTotal, getSaleItemsCount, paymentMethodLabel, PAYMENT_METHODS, getDailySequenceMap, getDisplayName, getLocalDateStr, isSameLocalDay } from '../utils';
 
@@ -46,8 +45,8 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales, aliases
         alert('No hay ventas registradas ese día.');
         return;
       }
-      if (format === 'PDF') exportDayToPDF(data);
-      else exportDayToExcel(data);
+      if (format === 'PDF') void exportDayToPDF(data);
+      else void exportDayToExcel(data);
     } else {
       if (rangeEnd < rangeStart) {
         alert('La fecha final no puede ser anterior a la inicial.');
@@ -58,87 +57,9 @@ export const SalesExportMenu: React.FC<SalesExportMenuProps> = ({ sales, aliases
     setIsOpen(false);
   };
 
-  const exportDayToPDF = (data: Sale[]) => {
-    const doc = new jsPDF();
-    const completed = data.filter((s) => s.status === SaleStatus.COMPLETED);
-    const totalDia = completed.reduce((acc, s) => acc + getSaleTotal(s), 0);
-    const itemsDia = completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0);
-    const discountDia = completed.reduce((acc, s) => acc + s.items.reduce((a, it) => a + (it.discount || 0), 0), 0);
-    const dailySeq = getDailySequenceMap(data);
-
-    doc.setFontSize(18);
-    doc.text('Vestimenta GT', 14, 15);
-    doc.setFontSize(12);
-    doc.text(`Reporte de Ventas — ${formatDate(day)}`, 14, 25);
-    doc.setFontSize(9);
-    doc.text(`Generado: ${new Date().toLocaleString('es-GT')}`, 14, 31);
-
-    const summaryRows = PAYMENT_METHODS
-      .map((m) => [m.label, formatCurrency(methodTotal(data, m.value))])
-      .filter((row) => row[1] !== formatCurrency(0));
-    autoTable(doc, {
-      startY: 36,
-      head: [['Método de pago', 'Total']],
-      body: summaryRows.length > 0 ? summaryRows : [['Sin ventas completadas', formatCurrency(0)]],
-      // El monto de la fila TOTAL se alinea a la derecha con un estilo puesto
-      // directamente en la celda (no solo en columnStyles), porque autoTable
-      // no siempre respeta columnStyles en la fila "foot".
-      foot: [['TOTAL', { content: formatCurrency(totalDia), styles: { halign: 'right' } }]],
-      theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [43, 178, 151], textColor: 255 },
-      footStyles: { fillColor: [232, 247, 242], textColor: [26, 138, 114], fontStyle: 'bold' },
-      columnStyles: { 1: { halign: 'right' } },
-    });
-
-    const afterSummaryY = (doc as any).lastAutoTable.finalY + 6;
-
-    const tableHeaders = [['#', 'Prenda', 'Precio', 'Cantidad', 'Método(s)', 'Descuento', 'Total', 'Vendió']];
-    const tableRows = data.map((s) => {
-      const cancelled = s.status === SaleStatus.CANCELLED;
-      const prendaList = s.items.map((it) => `${it.code} - ${it.name}`).join('\n');
-      const precioList = s.items.map((it) => formatCurrency(it.pricePerUnit)).join('\n');
-      const qtyList = s.items.map((it) => `${it.quantity}`).join('\n');
-      const paymentsList = s.payments.map((p) => `${paymentMethodLabel(p.method)}: ${formatCurrency(p.amount)}`).join('\n');
-      const discount = s.items.reduce((acc, it) => acc + (it.discount || 0), 0);
-      return [
-        `${dailySeq.get(s.id)}${cancelled ? ' (ANULADA)' : ''}`,
-        prendaList,
-        precioList,
-        qtyList,
-        paymentsList,
-        discount > 0 ? formatCurrency(discount) : '—',
-        formatCurrency(getSaleTotal(s)),
-        getDisplayName(s.soldByEmail, aliases),
-      ];
-    });
-
-    // Fila de totales, alineada bajo la columna a la que corresponde cada dato.
-    // "Precio" y "Vendió" quedan en blanco: son solo informativas, como el precio
-    // unitario de cada línea, no tiene sentido sumarlas.
-    // Igual que en la tabla de arriba: el monto del Total se alinea a la
-    // derecha con un estilo puesto directo en la celda, para que autoTable
-    // lo respete también en la fila "foot".
-    const footRow = [[
-      '', 'TOTAL DEL DÍA', '', `${itemsDia} prenda(s)`, `${completed.length} venta(s)`,
-      discountDia > 0 ? formatCurrency(discountDia) : '—',
-      { content: formatCurrency(totalDia), styles: { halign: 'right' as const } },
-      '',
-    ]];
-
-    autoTable(doc, {
-      startY: afterSummaryY,
-      head: tableHeaders,
-      body: tableRows,
-      foot: footRow,
-      theme: 'grid',
-      styles: { fontSize: 7.5, cellPadding: 2 },
-      headStyles: { fillColor: [43, 178, 151], textColor: 255 },
-      footStyles: { fillColor: [232, 247, 242], textColor: [26, 138, 114], fontStyle: 'bold', fontSize: 8 },
-      columnStyles: { 2: { halign: 'right' }, 3: { halign: 'center' }, 6: { halign: 'right' } },
-    });
-
-    doc.save(`Reporte_Ventas_${day}.pdf`);
+  const exportDayToPDF = async (data: Sale[]) => {
+    const doc = await buildDayReportPdf(data, day, aliases);
+    downloadPdf(doc, dayReportFileName(day));
   };
 
   const exportDayToExcel = async (data: Sale[]) => {

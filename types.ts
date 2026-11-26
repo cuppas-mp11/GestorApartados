@@ -354,3 +354,35 @@ export interface FinanceSettings {
   updatedByEmail?: string;
   updatedAt?: string;
 }
+
+// ---- Cierre del día ----
+// Lo envía la vendedora al terminar la jornada: guarda una "foto" de los totales
+// del día y el efectivo que ella contó en caja, para que la administradora lo vea
+// en el sistema y compare contra lo que dice el sistema. Hay UN cierre por día
+// (el id es la fecha); si se vuelve a enviar el mismo día, se actualiza.
+export interface DailyClosing {
+  id: string; // igual a `date` (YYYY-MM-DD)
+  date: string;
+  closedByEmail: string;
+  closedAt: string;
+  salesCount: number; // ventas completadas
+  itemsCount: number; // prendas vendidas
+  totalSold: number;
+  discountTotal: number;
+  cancelledCount: number; // ventas anuladas ese día
+  byMethod: Record<string, number>; // total por método de pago (cash, card, transfer, balance, other)
+  // Caja corriente: efectivo con que se abrió + efectivo cobrado desde el cierre
+  // anterior = efectivo esperado. La vendedora cuenta, y lo que NO se envía a la
+  // administradora se queda en caja y es el "efectivo de apertura" del siguiente cierre.
+  openingCash: number; // efectivo con que arrancó (lo que quedó en caja en el cierre anterior)
+  cashSales: number; // efectivo cobrado en ventas desde el cierre anterior
+  expectedCash: number; // openingCash + cashSales
+  countedCash: number; // efectivo que contó la vendedora
+  difference: number; // contado - esperado (positivo = sobra, negativo = falta)
+  sentToAdmin: number; // efectivo que se separó para enviar a la administradora (ej. cada viernes)
+  keptInBox: number; // countedCash - sentToAdmin: lo que queda disponible en caja
+  note?: string;
+  // Lo marca la administradora al revisarlo
+  seenByEmail?: string;
+  seenAt?: string;
+}

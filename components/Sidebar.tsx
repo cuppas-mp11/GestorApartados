@@ -15,6 +15,7 @@ interface SidebarProps {
   role: UserRole | null;
   isOpen: boolean;
   onClose: () => void;
+  badges?: Partial<Record<Page, number>>; // globito rojo con un número (ej. cierres sin revisar)
 }
 
 const navItems: NavItem[] = [
@@ -89,7 +90,7 @@ const adminSettingsNavItem: NavItem = {
   ),
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ page, setPage, role, isOpen, onClose }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ page, setPage, role, isOpen, onClose, badges }) => {
   const [logoFailed, setLogoFailed] = useState(false);
 
   const handleNavigate = (p: Page) => {
@@ -142,6 +143,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ page, setPage, role, isOpen, o
             >
               {item.icon}
               {item.label}
+              {(badges?.[item.id] || 0) > 0 && (
+                <span className="ml-auto bg-[#8c3a4b] text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center">
+                  {badges?.[item.id]}
+                </span>
+              )}
             </button>
           ))}
         </nav>

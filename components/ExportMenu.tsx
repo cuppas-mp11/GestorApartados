@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { downloadStyledExcel, Cell } from '../excelStyle';
+import { loadLogoDataUrl, PDF_LOGO_SIZE, PDF_TEXT_X_WITH_LOGO } from '../pdfLogo';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Reservation, ReservationStatus } from '../types';
@@ -35,9 +36,9 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ reservations }) => {
     }
 
     if (format === 'EXCEL') {
-      exportToExcel(data);
+      void exportToExcel(data);
     } else {
-      exportToPDF(data);
+      void exportToPDF(data);
     }
     setIsOpen(false);
   };
@@ -89,15 +90,19 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ reservations }) => {
     ]);
   };
 
-  const exportToPDF = (data: Reservation[]) => {
+  const exportToPDF = async (data: Reservation[]) => {
     const doc = new jsPDF();
+    const logo = await loadLogoDataUrl();
     const title = `Reporte de Apartados - ${filterType === 'PENDING' ? 'Pendientes' : filterType === 'MONTH' ? `Mes ${selectedMonth}` : 'Historial Completo'}`;
 
+    if (logo) doc.addImage(logo, 'PNG', 14, 8, PDF_LOGO_SIZE, PDF_LOGO_SIZE);
+    const textX = logo ? PDF_TEXT_X_WITH_LOGO : 14;
     doc.setFontSize(18);
-    doc.text('Boutique & Moda GT', 14, 15);
+    doc.text('Vestimenta GT', textX, 15);
     doc.setFontSize(12);
-    doc.text(title, 14, 25);
-    doc.text(`Fecha de generación: ${new Date().toLocaleDateString()}`, 14, 32);
+    doc.text(title, textX, 22);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${new Date().toLocaleString('es-GT')}`, textX, 28);
 
     const tableHeaders = [['#', 'Cliente', 'Fecha', 'Prendas', 'Total', 'Pagado', 'Saldo']];
     const tableRows = data.map(res => {

@@ -605,3 +605,108 @@ Clic en **"Publicar"**.
 **Antes de usarlo:** entra a **Inventario → Lotes por color → Editar** y confirma que la fecha del primer lote sea la correcta (el sistema trae 23/10/2026 por defecto, según tu documento — ajústala si al final usaron el 22/10 u otra fecha) y que los 6 colores estén en el orden correcto (ROSADO, ROJO, AMARILLO, PLATEADO, VERDE, AZUL). Los lotes que ya tienes registrados de antes de esta actualización no tienen color asignado — seguirán vendiéndose a precio normal (sin rebaja automática) hasta que registres de nuevo su entrega, o si prefieres, puedes borrarlos y volver a registrarlos con la fecha correcta para que les asigne el color que les toca.
 
 
+
+
+---
+
+## Paso 15: Cierre del día + compartir reporte — ⚠️ requiere actualizar las reglas
+
+Novedades:
+
+- **"Cerrar el día"** (botón junto a "Venta Nueva"): lleva una **caja corriente**. El sistema calcula el efectivo disponible = lo que quedó en caja en el cierre anterior + el efectivo cobrado desde entonces. La vendedora cuenta la caja, y al instante ve si **cuadra, sobra o falta**. Después escribe, si aplica, cuánto efectivo **se envía a la administradora** (ej. cada viernes); lo demás **se queda en caja** y es el efectivo de apertura del siguiente cierre. El primer cierre pide con cuánto efectivo se abrió la caja. Si hay más ventas después, puede actualizar el cierre del mismo día. Los viernes el sistema le recuerda separar el envío.
+- **Para la administradora:** en Ventas → Resumen aparece el panel **"Cierres del día"** con cada cierre (total vendido, efectivo del sistema vs contado, nota, quién lo envió y a qué hora). Los nuevos salen marcados como NUEVO y el menú "Ventas" muestra un globito rojo con la cantidad sin revisar. Con "Marcar visto" se quita el aviso. Cada cierre tiene botón de **PDF**.
+- **PDF y compartir:** después de enviar el cierre, la vendedora puede **descargar** el PDF o **compartirlo** (en el celular abre el menú de compartir: WhatsApp, correo, Drive…). El PDF de un día con cierre incluye el cuadre de efectivo.
+- Solo el efectivo pasa por la caja (tarjeta, depósito y saldo a favor no). El panel de la administradora muestra cuánto hay **en caja** según el último cierre y cuánto se le **ha enviado en los últimos 30 días**.
+
+**Sí hay que actualizar las reglas**, porque se agregó una colección nueva: `dailyClosings`. La vendedora crea/actualiza el cierre, cualquier usuaria autenticada puede leerlo y solo un admin puede borrarlo.
+
+Ve a **Firestore Database → pestaña "Reglas"** y reemplaza TODO el contenido por este bloque (incluye todo lo anterior más la colección nueva):
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /roles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /reservations/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null && (
+        request.resource.data.status != 'DELETED' ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /inventory/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /customers/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /lots/{id} {
+      allow read, create: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow update: if request.auth != null;
+    }
+    match /editLogs/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /sales/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /creditLedger/{id} {
+      allow read, create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacas/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /pacaReconciliations/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseCategories/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenseTemplates/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /expenses/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /settings/{id} {
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /lotColorSettings/{id} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+    match /dailyClosings/{id} {
+      // Cierre del día: la vendedora lo crea/actualiza y la administradora lo marca como visto.
+      allow read, create, update: if request.auth != null;
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
+```
+
+Clic en **"Publicar"**. Mientras no publiques las reglas, el botón "Cerrar el día" mostrará "No se pudo enviar el cierre".

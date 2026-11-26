@@ -1,5 +1,5 @@
 import {
-  Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
+  DailyClosing, Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
   GarmentPriceEntry, Expense, ExpenseCategoryItem, ExpenseTemplate,
   UnitCostItem, FinanceSettings, LotColorSettings, LotStage, InventoryItem,
 } from './types';
@@ -558,4 +558,51 @@ export const formatTodayLabel = (date: Date = new Date()): string => {
   const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   return `${days[date.getDay()]} ${String(date.getDate()).padStart(2, '0')}-${months[date.getMonth()]}-${String(date.getFullYear()).slice(-2)}`;
+};
+
+// Totales de un día para el cierre: lo que dice el sistema (ventas completadas
+// de ese día).
+export const getDayClosingTotals = (sales: Sale[], dateStr: string) => {
+  const daySales = sales.filter((s) => isSameLocalDay(s.date, dateStr));
+  const completed = daySales.filter((s) => (s.status as unknown as string) === 'COMPLETED');
+  const byMethod: Record<string, number> = {};
+  PAYMENT_METHODS.forEach((m) => {
+    byMethod[m.value] = completed.reduce((acc, s) => acc + s.payments.filter((p) => p.method === m.value).reduce((a, p) => a + p.amount, 0), 0);
+  });
+  return {
+    daySales,
+    salesCount: completed.length,
+    itemsCount: completed.reduce((acc, s) => acc + getSaleItemsCount(s), 0),
+    totalSold: completed.reduce((acc, s) => acc + getSaleTotal(s), 0),
+    discountTotal: completed.reduce((acc, s) => acc + s.items.reduce((a, it) => a + (it.discount || 0), 0), 0),
+    cancelledCount: daySales.length - completed.length,
+    byMethod,
+  };
+};
+
+// ---- Caja corriente ----
+// El efectivo de la caja se lleva de un cierre al siguiente: lo que se queda en
+// caja hoy (contado - lo enviado a la administradora) es el efectivo de apertura
+// de mañana. Las tarjetas, depósitos y saldos a favor no pasan por la caja.
+
+// Último cierre ANTERIOR a una fecha (si lo hay).
+export const getPreviousClosing = (closings: DailyClosing[], dateStr: string): DailyClosing | undefined =>
+  [...closings].filter((c) => c.date < dateStr).sort((a, b) => b.date.localeCompare(a.date))[0];
+
+// Efectivo cobrado en ventas completadas DESPUÉS del cierre anterior (sin
+// incluirlo) hasta la fecha indicada (incluida). Sin cierre anterior, solo cuenta ese día.
+export const getCashSalesSince = (sales: Sale[], previous: DailyClosing | undefined, untilDate: string): number =>
+  sales
+    .filter((s) => (s.status as unknown as string) === 'COMPLETED')
+    .filter((s) => {
+      const d = getLocalDateStr(s.date);
+      return d <= untilDate && (previous ? d > previous.date : d === untilDate);
+    })
+    .reduce((acc, s) => acc + s.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0), 0);
+
+// Estado del efectivo de un cierre, para mostrarlo con color.
+export const getCashStatus = (closing: Pick<DailyClosing, 'difference'>): { label: string; ok: boolean } => {
+  const d = closing.difference;
+  if (Math.abs(d) < 0.01) return { label: 'Cuadra ✓', ok: true };
+  return { label: d > 0 ? `Sobran ${formatCurrency(d)}` : `Faltan ${formatCurrency(Math.abs(d))}`, ok: false };
 };
