@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CashPurchase, DailyClosing, Sale } from '../types';
 import { formatCurrency, formatDate, formatTodayLabel, getDayClosingTotals, getCashStatus, getDisplayName, getLocalDateStr, getPreviousClosing, getCashSalesSince, getPurchasesSince, PAYMENT_METHODS } from '../utils';
+import { ClosingView, EyeIcon } from './ClosingView';
 import { buildDayReportPdf, dayReportFileName, downloadPdf, sharePdf } from '../reportPdf';
 
 interface DailyClosingButtonProps {
@@ -24,6 +25,7 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
   const [saved, setSaved] = useState<DailyClosing | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfMsg, setPdfMsg] = useState('');
+  const [viewing, setViewing] = useState<DailyClosing | null>(null);
 
   const today = getLocalDateStr();
   const totals = getDayClosingTotals(sales, today);
@@ -153,7 +155,8 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
                   </p>
                 </div>
                 <p className="text-[11px] text-slate-500 font-bold">Si quieres, también puedes llevarte el reporte en PDF:</p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-[auto_1fr_1fr] gap-3">
+                  <button onClick={() => setViewing(saved)} title="Ver cierre en pantalla" aria-label="Ver cierre" className="px-4 py-3 border-2 border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl flex items-center justify-center"><EyeIcon /></button>
                   <button onClick={handleDownload} disabled={pdfBusy} className="py-3 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-xs font-black rounded-xl uppercase tracking-wide transition">
                     Descargar PDF
                   </button>
@@ -315,6 +318,7 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
           </div>
         </div>
       )}
+      {viewing && <ClosingView closing={viewing} aliases={aliases} onClose={() => setViewing(null)} />}
     </>
   );
 };

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { DailyClosing, Sale, UserRole } from '../types';
 import { formatCurrency, formatDate, getCashStatus, getDisplayName, isSameLocalDay, PAYMENT_METHODS } from '../utils';
+import { ClosingView, EyeIcon } from './ClosingView';
 import { buildDayReportPdf, dayReportFileName, downloadPdf } from '../reportPdf';
 
 interface ClosingsPanelProps {
@@ -16,6 +17,7 @@ interface ClosingsPanelProps {
 export const ClosingsPanel: React.FC<ClosingsPanelProps> = ({ closings, sales, aliases, role, onMarkSeen }) => {
   const [expanded, setExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<DailyClosing | null>(null);
   if (role !== 'admin' || closings.length === 0) return null;
 
   const sorted = [...closings].sort((a, b) => b.date.localeCompare(a.date));
@@ -24,7 +26,7 @@ export const ClosingsPanel: React.FC<ClosingsPanelProps> = ({ closings, sales, a
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 30);
   const sent30 = sorted.filter((c) => c.date >= cutoff.toISOString().slice(0, 10)).reduce((acc, c) => acc + (c.sentToAdmin || 0), 0);
-  const visible = expanded ? sorted.slice(0, 31) : sorted.slice(0, 3);
+  const visible = expanded ? sorted : sorted.slice(0, 3);
 
   const pdf = async (c: DailyClosing) => {
     setBusyId(c.id);
@@ -90,6 +92,7 @@ export const ClosingsPanel: React.FC<ClosingsPanelProps> = ({ closings, sales, a
                   <span className={`font-black px-2 py-0.5 rounded-full ${cash.ok ? 'bg-[#2bb297]/15 text-[#1a8a72]' : 'bg-[#8c3a4b]/15 text-[#8c3a4b]'}`}>{cash.label}</span>
                 </div>
                 <div className="flex gap-2">
+                  <button onClick={() => setViewing(c)} title="Ver cierre en pantalla" aria-label="Ver cierre" className="text-slate-600 border border-slate-300 hover:bg-slate-100 px-2 py-1 rounded-lg"><EyeIcon /></button>
                   <button onClick={() => pdf(c)} disabled={busyId === c.id} className="text-[10px] font-black text-slate-600 border border-slate-300 hover:bg-slate-100 px-2.5 py-1 rounded-lg uppercase">
                     PDF
                   </button>
@@ -115,6 +118,7 @@ export const ClosingsPanel: React.FC<ClosingsPanelProps> = ({ closings, sales, a
           );
         })}
       </div>
+      {viewing && <ClosingView closing={viewing} aliases={aliases} onClose={() => setViewing(null)} />}
     </div>
   );
 };
