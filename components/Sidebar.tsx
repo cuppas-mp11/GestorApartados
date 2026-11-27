@@ -140,25 +140,36 @@ export const Sidebar: React.FC<SidebarProps> = ({ page, setPage, role, isOpen, o
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
-          {(role === 'admin' ? [...navItems, adminNavItem, adminSettingsNavItem] : navItems).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => handleNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition ${
-                page === item.id
-                  ? 'bg-[#2bb297]/10 text-[#1a8a72]'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-              }`}
-            >
-              {item.icon}
-              {item.label}
-              {(badges?.[item.id] || 0) > 0 && (
-                <span className="ml-auto bg-[#8c3a4b] text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center">
-                  {badges?.[item.id]}
-                </span>
-              )}
-            </button>
-          ))}
+          {[...navItems, ...(role === 'admin' ? [adminNavItem, adminSettingsNavItem] : [])].map((item) => {
+            const isAdminItem = item.id === 'finanzas' || item.id === 'ajustes';
+            return (
+              <React.Fragment key={item.id}>
+                {/* Separador: lo de abajo solo lo ve la administradora */}
+                {item.id === 'finanzas' && (
+                  <div className="pt-3 pb-1 px-3">
+                    <div className="border-t border-slate-200" />
+                    <p className="text-[9px] font-black text-[#8c3a4b]/70 uppercase tracking-widest mt-2.5">Administradora</p>
+                  </div>
+                )}
+                <button
+                  onClick={() => handleNavigate(item.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition ${
+                    page === item.id
+                      ? isAdminItem ? 'bg-[#8c3a4b]/10 text-[#8c3a4b]' : 'bg-[#2bb297]/10 text-[#1a8a72]'
+                      : isAdminItem ? 'text-slate-500 hover:bg-[#8c3a4b]/5 hover:text-[#8c3a4b]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                  {(badges?.[item.id] || 0) > 0 && (
+                    <span className="ml-auto bg-[#8c3a4b] text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center">
+                      {badges?.[item.id]}
+                    </span>
+                  )}
+                </button>
+              </React.Fragment>
+            );
+          })}
         </nav>
 
       </aside>
