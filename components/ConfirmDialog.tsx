@@ -12,6 +12,7 @@ interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean; // botón rojo (para borrar, anular, descartar)
+  hideCancel?: boolean; // ventana informativa: solo botón de aceptar
 }
 
 interface ConfirmRequest extends ConfirmOptions {
@@ -32,6 +33,10 @@ export const confirmDialog = (message: string, options: ConfirmOptions = {}): Pr
   });
 
 // Se monta UNA sola vez en App.tsx.
+// Ventana informativa (solo "Entendido"), con el mismo diseño.
+export const infoDialog = (message: string, options: ConfirmOptions = {}): Promise<boolean> =>
+  confirmDialog(message, { title: 'Aviso', confirmLabel: 'Entendido', hideCancel: true, ...options });
+
 export const ConfirmHost: React.FC = () => {
   const [req, setReq] = useState<ConfirmRequest | null>(null);
 
@@ -71,13 +76,15 @@ export const ConfirmHost: React.FC = () => {
           <p className="text-sm font-bold text-slate-800 leading-relaxed whitespace-pre-line">{req.message}</p>
         </div>
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex gap-3 justify-end">
-          <button
-            autoFocus
-            onClick={() => close(false)}
-            className="px-5 py-2.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 text-xs font-black rounded-xl uppercase tracking-wide transition"
-          >
-            {req.cancelLabel || 'Cancelar'}
-          </button>
+          {!req.hideCancel && (
+            <button
+              autoFocus
+              onClick={() => close(false)}
+              className="px-5 py-2.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 text-xs font-black rounded-xl uppercase tracking-wide transition"
+            >
+              {req.cancelLabel || 'Cancelar'}
+            </button>
+          )}
           <button
             onClick={() => close(true)}
             className={`px-5 py-2.5 text-white text-xs font-black rounded-xl uppercase tracking-wide transition shadow-sm ${req.danger ? 'bg-[#8c3a4b] hover:bg-[#6f2d3a]' : 'bg-[#2bb297] hover:bg-[#1a8a72]'}`}

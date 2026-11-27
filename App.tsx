@@ -48,7 +48,7 @@ import { CustomerManager } from './components/CustomerManager';
 import { CustomerBalances } from './components/CustomerBalances';
 import { ExportMenu } from './components/ExportMenu';
 import { GarmentPriceCard } from './components/GarmentPriceCard';
-import { ConfirmHost, confirmDialog } from './components/ConfirmDialog';
+import { ConfirmHost, confirmDialog, infoDialog } from './components/ConfirmDialog';
 import { DailyClosingButton } from './components/DailyClosingButton';
 import { AbonosApartadosCard } from './components/AbonosApartadosCard';
 import { RenewalNotice } from './components/RenewalNotice';
@@ -75,6 +75,7 @@ import {
   generateId,
   getTotalPrice,
   getTotalPaid,
+  getBalance,
   getNextCustomerCode,
   getDayClosingTotals,
   getPreviousClosing,
@@ -686,11 +687,18 @@ const App: React.FC = () => {
     });
   };
 
+  // Nombres de los lotes de donde salió el stock de un apartado (para avisar a dónde vuelve).
+  const originLotNames = (res: Reservation): string =>
+    Array.from(new Set((res.stockAllocations || []).map((a) => lots.find((l) => l.id === a.lotId)?.label || a.code))).join(', ');
+
   const updateStatus = async (id: string, status: ReservationStatus) => {
     const res = reservations.find((r) => r.id === id);
+    const pendingBalance = res ? getBalance(res) : 0;
 
     let label = status === ReservationStatus.PAID
-      ? 'marcar este apartado como LIQUIDADO'
+      ? (pendingBalance > 0.005
+          ? `LIQUIDAR este apartado.\n\nSe registrará el pago del saldo pendiente (${formatCurrency(pendingBalance)}, en efectivo) y quedará en la caja del día`
+          : 'marcar este apartado como LIQUIDADO')
       : 'LIBERAR la prenda (cancelar este apartado)';
 
     if (status === ReservationStatus.CANCELLED && res) {
@@ -708,12 +716,24 @@ const App: React.FC = () => {
 
     if (status === ReservationStatus.CANCELLED && res) {
       try {
+        const hadStock = !res.stockRestored && !!res.stockAllocations?.length;
         const renewal = await releaseReservation(res);
         if (renewal) setRenewalNotice({ res, renewal });
+        else if (hadStock) {
+          await infoDialog(`Apartado #${res.correlative} liberado.\n\nComo todavía no estaba vencido, las prendas volvieron a su lote de origen: ${originLotNames(res)}.\nNo hay que cambiar etiquetas.`, { title: 'Prenda liberada' });
+        } else {
+          await infoDialog(`Apartado #${res.correlative} liberado.\n\nEste apartado es antiguo y no tenía lote registrado, así que no se movió stock.`, { title: 'Prenda liberada' });
+        }
       } catch (err) {
         console.error('Error liberando el apartado:', err);
         alert('No se pudo liberar el apartado. Intenta de nuevo.');
       }
+      return;
+    }
+
+    // Liquidar = registrar el pago del saldo pendiente (así entra a la caja y el saldo queda en 0).
+    if (status === ReservationStatus.PAID && res && pendingBalance > 0.005) {
+      await addPayment(id, pendingBalance, 'Liquidación');
       return;
     }
 
@@ -744,6 +764,7 @@ const App: React.FC = () => {
     if (!(await confirmDialog('¿Estás seguro de que deseas eliminar este registro? Pasará al historial de eliminados.', { danger: true, confirmLabel: 'Eliminar' }))) return;
 
     const res = reservations.find((r) => r.id === id);
+    let restoredTo = '';
     const updates: Record<string, unknown> = {
       status: ReservationStatus.DELETED,
       deletedAt: new Date().toISOString(),
@@ -757,12 +778,16 @@ const App: React.FC = () => {
       try {
         await restoreStock(res.stockAllocations);
         updates.stockRestored = true;
+        restoredTo = originLotNames(res);
       } catch (err) {
         console.error('Error devolviendo stock al eliminar el apartado:', err);
       }
     }
 
     await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), updates);
+    if (restoredTo) {
+      await infoDialog(`Apartado #${res!.correlative} eliminado (archivado).\n\nLas prendas volvieron a su lote de origen: ${restoredTo}.`, { title: 'Registro eliminado' });
+    }
   };
 
   const editReservationField = async (

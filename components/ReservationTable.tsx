@@ -243,7 +243,7 @@ export const ReservationTable: React.FC<ReservationTableProps> = ({ reservations
                               onClick={() => onUpdateStatus(res.id, ReservationStatus.PAID)}
                               className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-[#2bb297]/5 hover:bg-[#2bb297]/10 text-[#1a8a72] border border-[#2bb297]/20 px-3 py-1.5 rounded-lg text-[11px] font-black transition"
                             >
-                              <span>✓</span> Liquidar
+                              <span>✓</span> Pagar saldo y liquidar
                             </button>
                             <button
                               onClick={() => onUpdateStatus(res.id, ReservationStatus.CANCELLED)}
