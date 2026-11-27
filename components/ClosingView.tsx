@@ -1,17 +1,20 @@
 import React from 'react';
-import { DailyClosing } from '../types';
-import { formatCurrency, formatDate, getCashStatus, getDisplayName, PAYMENT_METHODS } from '../utils';
+import { DailyClosing, Sale, SaleStatus } from '../types';
+import { formatCurrency, formatDate, getCashStatus, getDisplayName, getSaleTotal, getDailySequenceMap, isSameLocalDay, paymentMethodLabel, PAYMENT_METHODS } from '../utils';
 
 interface ClosingViewProps {
   closing: DailyClosing;
   aliases: Record<string, string>;
+  sales?: Sale[]; // para mostrar el detalle de ventas del día (lo mismo que trae el PDF)
   onClose: () => void;
 }
 
 // Vista (solo lectura) de un cierre del día, con el diseño del sistema.
 // Es lo mismo que trae el PDF, pero se lee en pantalla sin descargar nada.
-export const ClosingView: React.FC<ClosingViewProps> = ({ closing: c, aliases, onClose }) => {
+export const ClosingView: React.FC<ClosingViewProps> = ({ closing: c, aliases, sales, onClose }) => {
   const cash = getCashStatus(c);
+  const daySales = (sales || []).filter((s) => isSameLocalDay(s.date, c.date)).sort((a, b) => a.correlative - b.correlative);
+  const seq = getDailySequenceMap(daySales);
   const purchases = c.purchasesTotal || 0;
   const Row = ({ label, value, strong, fill, thick }: { label: string; value: string; strong?: boolean; fill?: string; thick?: boolean }) => (
     <div className={`flex justify-between px-3 py-2 text-sm ${fill || ''} ${thick ? 'border-b-2 border-slate-900' : 'border-b border-slate-100'}`}>
@@ -32,7 +35,8 @@ export const ClosingView: React.FC<ClosingViewProps> = ({ closing: c, aliases, o
         <div className="p-5 space-y-4 overflow-y-auto">
           <div className="bg-slate-50 rounded-xl p-4 space-y-1.5">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Ventas del día</p>
-            <div className="flex justify-between text-sm"><span className="font-bold text-slate-600">Ventas</span><span className="font-black text-slate-800">{c.salesCount} · {c.itemsCount} prenda(s)</span></div>
+            <div className="flex justify-between text-sm"><span className="font-bold text-slate-600">Ventas</span><span className="font-black text-slate-800">{c.salesCount}</span></div>
+            <div className="flex justify-between text-sm"><span className="font-bold text-slate-600">Prendas</span><span className="font-black text-slate-800">{c.itemsCount}</span></div>
             {PAYMENT_METHODS.map((m) => (c.byMethod?.[m.value] || 0) > 0 && (
               <div key={m.value} className="flex justify-between text-sm">
                 <span className="font-bold text-slate-500">{m.label}</span>
@@ -58,6 +62,36 @@ export const ClosingView: React.FC<ClosingViewProps> = ({ closing: c, aliases, o
             <Row label="Se queda en caja chica" value={formatCurrency(c.keptInBox)} strong fill="bg-slate-200" thick />
             <p className={`text-center text-sm font-black py-2 ${cash.ok ? 'bg-[#e8f7f2] text-[#1a8a72]' : 'bg-[#fbeff1] text-[#8c3a4b]'}`}>{cash.label}</p>
           </div>
+
+          {sales && (
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Detalle de ventas</p>
+              {daySales.length === 0 ? (
+                <p className="text-xs font-bold text-slate-400">No hay ventas registradas ese día.</p>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="grid grid-cols-[2rem_1fr_auto] gap-x-2 bg-[#2bb297] text-white text-[9px] font-black uppercase px-3 py-1.5">
+                    <span>#</span><span>Prendas y pago</span><span className="text-right">Total</span>
+                  </div>
+                  {daySales.map((s, i) => {
+                    const cancelled = s.status === SaleStatus.CANCELLED;
+                    return (
+                      <div key={s.id} className={`grid grid-cols-[2rem_1fr_auto] gap-x-2 px-3 py-2 text-[11px] border-t border-slate-100 ${cancelled ? 'bg-[#fbeff1] text-[#8c3a4b] line-through' : i % 2 ? 'bg-slate-50' : ''}`}>
+                        <span className="font-black">{seq.get(s.id)}</span>
+                        <div className="min-w-0">
+                          <p className="text-slate-700 break-words">{s.items.map((it) => `${it.quantity > 1 ? it.quantity + '× ' : ''}${it.code} ${it.name}`).join(', ')}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {s.payments.map((p) => `${paymentMethodLabel(p.method)} ${formatCurrency(p.amount)}`).join(' · ')} · {getDisplayName(s.soldByEmail, aliases)}{cancelled ? ' · ANULADA' : ''}
+                          </p>
+                        </div>
+                        <span className="font-black text-slate-800 text-right">{formatCurrency(getSaleTotal(s))}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {c.note && <p className="text-[12px] text-slate-600 font-bold bg-slate-50 rounded-xl px-3 py-2">📝 {c.note}</p>}
           <p className="text-[10px] text-slate-400 font-bold">

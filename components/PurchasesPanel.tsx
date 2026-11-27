@@ -59,6 +59,7 @@ export const PurchasesPanel: React.FC<PurchasesPanelProps> = ({ purchases, snaps
     if (ok) await onVoid(p);
   };
 
+  const todayTotal = purchases.filter((p) => p.status === 'ACTIVE' && p.date === today).reduce((a, p) => a + p.amount, 0);
   const shown = purchases.filter((p) => (!from || p.date >= from) && (!to || p.date <= to));
   const activeTotal = shown.filter((p) => p.status === 'ACTIVE').reduce((a, p) => a + p.amount, 0);
   const days = Array.from(new Set(shown.map((p) => p.date))).sort((a, b) => b.localeCompare(a));
@@ -71,13 +72,17 @@ export const PurchasesPanel: React.FC<PurchasesPanelProps> = ({ purchases, snaps
           {snapshot ? (
             <>
               <p className="text-3xl font-black text-[#1a8a72]">{formatCurrency(snapshot.balance)}</p>
-              <p className="text-[10px] font-bold text-slate-400 mt-1 leading-relaxed">
+              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
                 Quedó {formatCurrency(snapshot.base)} en el cierre del {formatDate(snapshot.baseDate)} + {formatCurrency(snapshot.cashSince)} cobrado en efectivo − {formatCurrency(snapshot.purchasesSince)} en compras.
               </p>
             </>
           ) : (
-            <p className="text-[11px] font-bold text-slate-400">Se calcula desde el primer "Cerrar el día". Mientras tanto, igual puedes ir registrando las compras.</p>
+            <p className="text-[11px] text-slate-500 leading-relaxed">El saldo de caja chica se calcula desde el primer "Cerrar el día". Mientras tanto, cada compra que guardes se va sumando abajo.</p>
           )}
+          <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-sm">
+            <span className="text-slate-500">Gastado hoy</span>
+            <span className="font-semibold text-[#8c3a4b]">{todayTotal > 0 ? `-${formatCurrency(todayTotal)}` : formatCurrency(0)}</span>
+          </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
@@ -128,8 +133,8 @@ export const PurchasesPanel: React.FC<PurchasesPanelProps> = ({ purchases, snaps
           </div>
         </div>
         <div className="bg-slate-50 rounded-xl px-4 py-2 mb-4 flex justify-between text-sm">
-          <span className="font-black text-slate-600 uppercase text-xs">Total gastado{from || to ? ' en el rango' : ''}</span>
-          <span className="font-black text-[#8c3a4b]">{formatCurrency(activeTotal)}</span>
+          <span className="text-slate-500 text-xs uppercase tracking-wide">Total gastado{from || to ? ' en el rango' : ''}</span>
+          <span className="font-semibold text-[#8c3a4b]">{formatCurrency(activeTotal)}</span>
         </div>
         {days.length === 0 ? (
           <p className="text-sm font-bold text-slate-400 text-center py-8">Todavía no hay compras registradas.</p>
@@ -138,24 +143,25 @@ export const PurchasesPanel: React.FC<PurchasesPanelProps> = ({ purchases, snaps
             {days.map((d) => {
               const list = shown.filter((p) => p.date === d);
               const dayTotal = list.filter((p) => p.status === 'ACTIVE').reduce((a, p) => a + p.amount, 0);
+              const isToday = d === today;
               return (
-                <div key={d}>
-                  <div className="flex justify-between border-b border-slate-200 pb-1 mb-1.5">
-                    <p className="text-xs font-black text-slate-600">{formatDate(d)}</p>
-                    <p className="text-xs font-black text-slate-600">{formatCurrency(dayTotal)}</p>
+                <div key={d} className={isToday ? 'bg-slate-100 rounded-xl p-3' : 'px-1'}>
+                  <div className={`flex justify-between pb-1 mb-1.5 border-b ${isToday ? 'border-slate-300' : 'border-slate-200'}`}>
+                    <p className={`text-xs font-black ${isToday ? 'text-[#1a8a72]' : 'text-slate-800'}`}>{isToday ? 'Hoy · ' : ''}{formatDate(d)}</p>
+                    <p className={`text-xs font-black ${isToday ? 'text-[#1a8a72]' : 'text-slate-800'}`}>{formatCurrency(dayTotal)}</p>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-0.5">
                     {list.map((p) => (
-                      <div key={p.id} className={`flex items-center justify-between rounded-lg px-3 py-2 ${p.status === 'VOIDED' ? 'bg-[#8c3a4b]/5' : 'bg-slate-50'}`}>
+                      <div key={p.id} className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${p.status === 'VOIDED' ? 'bg-[#8c3a4b]/5' : ''}`}>
                         <div className="min-w-0">
-                          <p className={`text-[12px] font-black ${p.status === 'VOIDED' ? 'line-through text-[#8c3a4b]' : 'text-slate-700'}`}>{p.description}</p>
-                          <p className="text-[9px] text-slate-400 font-bold truncate">
-                            {getDisplayName(p.createdByEmail, aliases)}{p.note ? ` · ${p.note}` : ''}{p.status === 'VOIDED' ? ' · ANULADA' : ''}
+                          <p className={`text-[13px] ${p.status === 'VOIDED' ? 'line-through text-[#8c3a4b]' : isToday ? 'text-[#1a8a72]' : 'text-slate-700'}`}>{p.description}</p>
+                          <p className="text-[10px] text-slate-400 truncate">
+                            {getDisplayName(p.createdByEmail, aliases)}{p.note ? ` · ${p.note}` : ''}{p.status === 'VOIDED' ? ' · anulada' : ''}
                           </p>
                         </div>
                         <div className="flex items-center gap-3 ml-2">
-                          <p className={`text-sm font-black ${p.status === 'VOIDED' ? 'line-through text-[#8c3a4b]' : 'text-slate-800'}`}>{formatCurrency(p.amount)}</p>
-                          {canVoid(p) && <button onClick={() => voidIt(p)} className="text-[10px] font-black text-[#8c3a4b] uppercase">Anular</button>}
+                          <p className={`text-[13px] ${p.status === 'VOIDED' ? 'line-through text-[#8c3a4b]' : isToday ? 'text-[#1a8a72]' : 'text-slate-700'}`}>{formatCurrency(p.amount)}</p>
+                          {canVoid(p) && <button onClick={() => voidIt(p)} className="text-[10px] font-medium text-[#8c3a4b] hover:underline uppercase">Anular</button>}
                         </div>
                       </div>
                     ))}

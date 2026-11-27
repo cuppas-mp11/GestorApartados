@@ -182,7 +182,8 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
 
                   <div className="bg-slate-50 rounded-xl p-4 space-y-1.5">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lo que dice el sistema</p>
-                    <div className="flex justify-between text-sm"><span className="font-bold text-slate-600">Ventas</span><span className="font-black text-slate-800">{totals.salesCount} · {totals.itemsCount} prenda(s)</span></div>
+                    <div className="flex justify-between text-sm"><span className="font-bold text-slate-600">Ventas</span><span className="font-black text-slate-800">{totals.salesCount}</span></div>
+                    <div className="flex justify-between text-sm"><span className="font-bold text-slate-600">Prendas</span><span className="font-black text-slate-800">{totals.itemsCount}</span></div>
                     {PAYMENT_METHODS.map((m) => (totals.byMethod[m.value] || 0) > 0 && (
                       <div key={m.value} className="flex justify-between text-sm">
                         <span className="font-bold text-slate-500">{m.label}</span>
@@ -318,7 +319,7 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
           </div>
         </div>
       )}
-      {viewing && <ClosingView closing={viewing} aliases={aliases} onClose={() => setViewing(null)} />}
+      {viewing && <ClosingView closing={viewing} sales={sales} aliases={aliases} onClose={() => setViewing(null)} />}
     </>
   );
 };

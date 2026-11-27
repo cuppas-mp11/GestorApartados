@@ -82,7 +82,8 @@ export const ClosingsPanel: React.FC<ClosingsPanelProps> = ({ closings, sales, a
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-[#1a8a72]">{formatCurrency(c.totalSold)}</p>
-                  <p className="text-[10px] text-slate-400 font-bold">{c.salesCount} venta(s) · {c.itemsCount} prenda(s)</p>
+                  <p className="text-[10px] text-slate-400 font-bold">Ventas: {c.salesCount}</p>
+                  <p className="text-[10px] text-slate-400 font-bold">Prendas: {c.itemsCount}</p>
                 </div>
               </div>
 
@@ -118,7 +119,7 @@ export const ClosingsPanel: React.FC<ClosingsPanelProps> = ({ closings, sales, a
           );
         })}
       </div>
-      {viewing && <ClosingView closing={viewing} aliases={aliases} onClose={() => setViewing(null)} />}
+      {viewing && <ClosingView closing={viewing} sales={sales} aliases={aliases} onClose={() => setViewing(null)} />}
     </div>
   );
 };
