@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { downloadStyledExcel, Cell } from '../excelStyle';
-import { Sale, Expense, CashPurchase, ExpenseCategoryItem, GarmentPriceEntry, FinanceSettings } from '../types';
+import { Sale, Expense, CashPurchase, CreditTransaction, ExpenseCategoryItem, GarmentPriceEntry, FinanceSettings } from '../types';
 import {
   formatCurrency,
   formatDate,
@@ -20,6 +20,7 @@ interface ProfitabilitySummaryProps {
   sales: Sale[];
   expenses: Expense[];
   purchases: CashPurchase[];
+  writeOffs: CreditTransaction[]; // saldos a favor dados de baja (pasan a ingreso)
   categories: ExpenseCategoryItem[];
   garmentPrices: GarmentPriceEntry[];
   settings: FinanceSettings;
@@ -33,7 +34,7 @@ const firstOfMonthStr = () => {
 };
 
 export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
-  sales, expenses, purchases, categories, garmentPrices, settings, aliases,
+  sales, expenses, purchases, writeOffs, categories, garmentPrices, settings, aliases,
 }) => {
   const [start, setStart] = useState(firstOfMonthStr());
   const [end, setEnd] = useState(todayStr());
@@ -46,7 +47,9 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
   // Las compras pagadas de caja chica también son gasto del negocio: se suman aquí para no registrarlas dos veces.
   const rangePurchases = purchases.filter((p) => p.status === 'ACTIVE' && p.date >= start && p.date <= end);
   const expensesTotal = getExpensesTotal(rangeExpenses) + rangePurchases.reduce((a, p) => a + (p.amount || 0), 0);
-  const finalProfit = breakdown.profitAfterCommission - expensesTotal;
+  // Saldos a favor que la administradora dio de baja: dinero de clientas que nunca volvieron, ahora ingreso.
+  const writeOffTotal = writeOffs.filter((t) => t.type === 'WRITTEN_OFF' && getLocalDateStr(t.date) >= start && getLocalDateStr(t.date) <= end).reduce((a, t) => a - t.amount, 0);
+  const finalProfit = breakdown.profitAfterCommission + writeOffTotal - expensesTotal;
 
   // Precio(s) por prenda usados en este rango (normalmente uno; varios si el precio cambió dentro del periodo)
   const pricesUsed = Array.from(new Set(rangeSales.map((s) => getGarmentPriceForDate(garmentPrices, s.date))));
@@ -73,6 +76,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
       ['GANANCIA NETA (base de comisión)', breakdown.netProfit],
       [`Comisión de vendedora (${settings.vendorCommissionPercent}%)`, -breakdown.vendorCommission],
       ['Ganancia después de comisión', breakdown.profitAfterCommission],
+      ['Abonos no reclamados (saldos dados de baja)', writeOffTotal],
       ['Gastos fijos/variables del periodo', -expensesTotal],
       ['GANANCIA FINAL', finalProfit],
     ];
@@ -91,7 +95,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
           {
             columns: [{ header: 'Concepto' }, { header: 'Monto', type: 'money' }],
             rows: chain,
-            emphasisRows: [8, 10, 12],
+            emphasisRows: [8, 10, 13],
           },
         ],
       },
@@ -183,6 +187,7 @@ export const ProfitabilitySummary: React.FC<ProfitabilitySummaryProps> = ({
         <Row label="Ganancia neta" value={breakdown.netProfit} bold divider />
         <Row label="Comisión de vendedora" value={-breakdown.vendorCommission} sub={`${settings.vendorCommissionPercent || 0}% de la ganancia neta`} />
         <Row label="Ganancia después de comisión" value={breakdown.profitAfterCommission} bold />
+        {writeOffTotal > 0 && <Row label="Abonos no reclamados" value={writeOffTotal} sub="Saldos a favor dados de baja" positive />}
         <Row label="Gastos del periodo" value={-expensesTotal} sub={`${rangeExpenses.length} registro(s)${rangePurchases.length > 0 ? ` + ${rangePurchases.length} compra(s) de caja chica` : ''}`} />
         <Row label="GANANCIA FINAL" value={finalProfit} bold big divider />
       </div>

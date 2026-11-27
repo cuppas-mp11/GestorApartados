@@ -28,6 +28,8 @@ import {
   CreditTransaction,
   DailyClosing,
   CashPurchase,
+  ReservationRenewal,
+  ReservationRenewalLine,
   GarmentPriceEntry,
   Expense,
   ExpenseCategoryItem,
@@ -48,6 +50,10 @@ import { ExportMenu } from './components/ExportMenu';
 import { GarmentPriceCard } from './components/GarmentPriceCard';
 import { ConfirmHost, confirmDialog } from './components/ConfirmDialog';
 import { DailyClosingButton } from './components/DailyClosingButton';
+import { AbonosApartadosCard } from './components/AbonosApartadosCard';
+import { RenewalNotice } from './components/RenewalNotice';
+import { RenewedItemsPanel } from './components/RenewedItemsPanel';
+import { ReservationAlerts } from './components/ReservationAlerts';
 import { PurchasesPanel } from './components/PurchasesPanel';
 import { ClosingsPanel } from './components/ClosingsPanel';
 import { ExpensesPanel } from './components/ExpensesPanel';
@@ -74,6 +80,12 @@ import {
   getPreviousClosing,
   getCashSalesSince,
   getPurchasesSince,
+  getReservationCashSince,
+  getLatestLot,
+  getReservationAlerts,
+  getEffectivePriceForLot,
+  getLotStage,
+  getStageInfo,
   getPettyCashSnapshot,
   aggregateStockNeeds,
   getCandidateLotsForCode,
@@ -121,6 +133,7 @@ const App: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [creditLedger, setCreditLedger] = useState<CreditTransaction[]>([]);
   const [closings, setClosings] = useState<DailyClosing[]>([]);
+  const [renewalNotice, setRenewalNotice] = useState<{ res: Reservation; renewal: ReservationRenewal } | null>(null);
   const [purchases, setPurchases] = useState<CashPurchase[]>([]);
   const [garmentPrices, setGarmentPrices] = useState<GarmentPriceEntry[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryItem[]>([]);
@@ -546,22 +559,34 @@ const App: React.FC = () => {
     });
   };
 
-  // Libera un apartado (lo cancela): devuelve el stock a sus lotes de origen y,
-  // si estaba VENCIDO y ya tenía algo abonado, ese abono se acredita como saldo
-  // a favor de la clienta (no se devuelve en efectivo). Todo en una sola
-  // transacción para que nunca quede "a medias" (stock devuelto sin acreditar, o viceversa).
-  const releaseReservation = async (res: Reservation) => {
+  // Libera un apartado (lo cancela).
+  // - Si estaba VENCIDO, las prendas NO vuelven a su lote original: pasan al lote
+  //   más reciente (segunda oportunidad desde cero, al precio de ese lote) y queda
+  //   un registro en el apartado (`renewal`) para que la vendedora cambie la etiqueta.
+  // - Si no estaba vencido (la clienta canceló antes), el stock vuelve a su lote de origen.
+  // - Si estaba VENCIDO y ya tenía algo abonado, ese abono se acredita como saldo a
+  //   favor de la clienta (no se devuelve en efectivo).
+  // Todo en una sola transacción para que nunca quede "a medias".
+  const releaseReservation = async (res: Reservation): Promise<ReservationRenewal | null> => {
     const wasOverdue = isOverdue(res.date);
     const totalPaid = getTotalPaid(res);
     const shouldCredit = wasOverdue && totalPaid > 0;
     const customerMatch = shouldCredit ? customers.find((c) => c.code === res.customerCode) : undefined;
     const customerRef = customerMatch ? doc(db, CUSTOMERS_COLLECTION, customerMatch.id) : null;
+    const hasStock = !res.stockRestored && !!res.stockAllocations?.length;
+    const allocations = hasStock ? res.stockAllocations! : [];
+    const latest = wasOverdue && hasStock ? getLatestLot(lots) : undefined;
+    let renewal = null as ReservationRenewal | null;
 
     await runTransaction(db, async (transaction) => {
+      renewal = null;
       // ---- lecturas ----
-      const lotRefs = (!res.stockRestored && res.stockAllocations?.length) ? res.stockAllocations.map((a) => doc(db, LOTS_COLLECTION, a.lotId)) : [];
-      const lotSnaps = lotRefs.length > 0 ? await Promise.all(lotRefs.map((r) => transaction.get(r))) : [];
-
+      const lotIds = Array.from(new Set([...allocations.map((a) => a.lotId), ...(latest ? [latest.id] : [])]));
+      const fresh = new Map<string, Lot>();
+      for (const id of lotIds) {
+        const snap = await transaction.get(doc(db, LOTS_COLLECTION, id));
+        if (snap.exists()) fresh.set(id, snap.data() as Lot);
+      }
       let freshCustomer: Customer | null = null;
       if (customerRef) {
         const snap = await transaction.get(customerRef);
@@ -571,12 +596,59 @@ const App: React.FC = () => {
       // ---- escrituras ----
       const reservationUpdates: Record<string, unknown> = { status: ReservationStatus.CANCELLED };
 
-      lotSnaps.forEach((snap, idx) => {
-        if (!snap.exists()) return;
-        const fresh = snap.data() as Lot;
-        transaction.update(lotRefs[idx], { quantityRemaining: fresh.quantityRemaining + res.stockAllocations![idx].quantity });
-      });
-      if (lotRefs.length > 0) reservationUpdates.stockRestored = true;
+      const delta = new Map<string, { remaining: number; qtyIn: number }>();
+      const bump = (id: string, remaining: number, qtyIn: number) => {
+        const cur = delta.get(id) || { remaining: 0, qtyIn: 0 };
+        cur.remaining += remaining;
+        cur.qtyIn += qtyIn;
+        delta.set(id, cur);
+      };
+      const latestFresh = latest ? fresh.get(latest.id) : undefined;
+      let movedQty = 0;
+      for (const a of allocations) {
+        if (!fresh.has(a.lotId)) continue; // el lote de origen ya no existe
+        if (latestFresh && a.lotId !== latestFresh.id) {
+          bump(a.lotId, 0, -a.quantity); // la prenda deja de contar en su lote de origen...
+          movedQty += a.quantity;
+        } else {
+          bump(a.lotId, a.quantity, 0); // ...o vuelve a su lote normalmente
+        }
+      }
+      if (latestFresh && movedQty > 0) {
+        bump(latestFresh.id, movedQty, movedQty); // ...y pasa al lote más reciente
+        const stage = latestFresh.color ? getLotStage(latestFresh.entryDate, lotColorSettings) : 'normal';
+        const lines: ReservationRenewalLine[] = res.items
+          .filter((it) => it.lotId !== latestFresh.id)
+          .map((it) => {
+            const base = inventory.find((g) => g.id === it.garmentId)?.basePrice ?? it.basePrice ?? it.pricePerUnit;
+            return {
+              code: it.code,
+              name: it.name,
+              quantity: it.quantity,
+              ...(it.lotLabel ? { fromLotLabel: it.lotLabel } : {}),
+              newPrice: getEffectivePriceForLot(latestFresh, base, lotColorSettings),
+            };
+          });
+        renewal = {
+          at: new Date().toISOString(),
+          byEmail: user?.email || 'desconocido',
+          toLotId: latestFresh.id,
+          toLotLabel: latestFresh.label,
+          ...(latestFresh.color ? { toLotColor: latestFresh.color } : {}),
+          toLotStageLabel: latestFresh.color ? getStageInfo(stage).label : 'Precio normal',
+          toLotIsFresh: stage === 'normal',
+          lines,
+        };
+        reservationUpdates.renewal = renewal;
+      }
+      for (const [id, d] of delta) {
+        const f = fresh.get(id)!;
+        transaction.update(doc(db, LOTS_COLLECTION, id), {
+          quantityRemaining: f.quantityRemaining + d.remaining,
+          ...(d.qtyIn !== 0 ? { quantityIn: f.quantityIn + d.qtyIn } : {}),
+        });
+      }
+      if (hasStock) reservationUpdates.stockRestored = true;
 
       if (customerRef && freshCustomer && customerMatch) {
         const newBalance = (freshCustomer.creditBalance || 0) + totalPaid;
@@ -602,6 +674,16 @@ const App: React.FC = () => {
 
       transaction.update(doc(db, RESERVATIONS_COLLECTION, res.id), reservationUpdates);
     });
+    return renewal;
+  };
+
+  // La vendedora confirma que ya cambió la etiqueta física de las prendas renovadas.
+  const markLabelsDone = async (resId: string) => {
+    await updateDoc(doc(db, RESERVATIONS_COLLECTION, resId), {
+      'renewal.labelsDone': true,
+      'renewal.labelsDoneAt': new Date().toISOString(),
+      'renewal.labelsDoneByEmail': user?.email || 'desconocido',
+    });
   };
 
   const updateStatus = async (id: string, status: ReservationStatus) => {
@@ -617,13 +699,17 @@ const App: React.FC = () => {
       if (wasOverdue && totalPaid > 0) {
         label += `.\n\nComo el apartado ya venció y la clienta había abonado ${formatCurrency(totalPaid)}, ese monto se le acreditará como SALDO A FAVOR (no se devuelve en efectivo)`;
       }
+      if (wasOverdue && res.stockAllocations?.length && !res.stockRestored) {
+        label += `.\n\nComo el apartado venció, las prendas pasarán al LOTE MÁS RECIENTE para tener una segunda oportunidad (se te dirá a cuál y qué etiqueta cambiar)`;
+      }
     }
 
     if (!(await confirmDialog(`¿Confirmas que deseas ${label}?`, { danger: status === ReservationStatus.CANCELLED }))) return;
 
     if (status === ReservationStatus.CANCELLED && res) {
       try {
-        await releaseReservation(res);
+        const renewal = await releaseReservation(res);
+        if (renewal) setRenewalNotice({ res, renewal });
       } catch (err) {
         console.error('Error liberando el apartado:', err);
         alert('No se pudo liberar el apartado. Intenta de nuevo.');
@@ -723,8 +809,9 @@ const App: React.FC = () => {
     const t = getDayClosingTotals(sales, date);
     const previous = getPreviousClosing(closings, date);
     const cashSales = getCashSalesSince(sales, previous, date);
+    const reservationCash = getReservationCashSince(reservations, previous, date);
     const purchasesTotal = getPurchasesSince(purchases, previous, date);
-    const expectedCash = input.openingCash + cashSales - purchasesTotal;
+    const expectedCash = input.openingCash + cashSales + reservationCash - purchasesTotal;
     const closing: DailyClosing = {
       id: date,
       date,
@@ -738,6 +825,7 @@ const App: React.FC = () => {
       byMethod: t.byMethod,
       openingCash: input.openingCash,
       cashSales,
+      reservationCash,
       purchasesTotal,
       expectedCash,
       countedCash: input.countedCash,
@@ -772,6 +860,32 @@ const App: React.FC = () => {
       status: 'VOIDED',
       voidedByEmail: user?.email || 'desconocido',
       voidedAt: new Date().toISOString(),
+    });
+  };
+
+  // Dar de baja el saldo a favor de una clienta que no vuelve: sale del saldo y
+  // queda en la bitácora como WRITTEN_OFF (en Finanzas cuenta como ingreso).
+  const writeOffCredit = async (customer: Customer, note: string) => {
+    if (role !== 'admin') return;
+    await runTransaction(db, async (transaction) => {
+      const ref = doc(db, CUSTOMERS_COLLECTION, customer.id);
+      const snap = await transaction.get(ref);
+      if (!snap.exists()) throw new Error('La clienta ya no existe.');
+      const balance = (snap.data() as Customer).creditBalance || 0;
+      if (balance <= 0) return;
+      transaction.update(ref, { creditBalance: 0 });
+      const ledgerRef = doc(db, CREDIT_LEDGER_COLLECTION, generateId());
+      const entry: CreditTransaction = {
+        id: ledgerRef.id,
+        customerId: customer.id,
+        customerName: customer.name,
+        type: 'WRITTEN_OFF',
+        amount: -balance,
+        date: new Date().toISOString(),
+        note,
+        createdByEmail: user?.email || 'desconocido',
+      };
+      transaction.set(ledgerRef, entry);
     });
   };
 
@@ -1351,6 +1465,7 @@ const App: React.FC = () => {
   const nextCorrelative = reservations.length > 0 ? Math.max(...reservations.map((r) => r.correlative)) + 1 : 1;
   const nextSaleCorrelative = sales.length > 0 ? Math.max(...sales.map((s) => s.correlative)) + 1 : 1;
   const overdueCount = reservations.filter((r) => r.status === ReservationStatus.PENDING && isOverdue(r.date)).length;
+  const pendingLabelsCount = reservations.filter((r) => r.renewal && !r.renewal.labelsDone).length;
   const activeReservationsCount = reservations.filter((r) => r.status === ReservationStatus.PENDING).length;
   const pendingLotsCount = lots.filter((l) => l.verificationStatus !== 'confirmed' && l.verificationStatus !== 'flagged').length;
   const flaggedLotsCount = lots.filter((l) => l.verificationStatus === 'flagged').length;
@@ -1389,7 +1504,10 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#e8f7f2] lg:flex">
       <ConfirmHost />
-      <Sidebar page={page} setPage={setPage} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} badges={role === 'admin' ? { ventas: closings.filter((c) => !c.seenAt).length } : undefined} />
+      {renewalNotice && (
+        <RenewalNotice res={renewalNotice.res} renewal={renewalNotice.renewal} onLabelsDone={() => markLabelsDone(renewalNotice.res.id)} onClose={() => setRenewalNotice(null)} />
+      )}
+      <Sidebar page={page} setPage={setPage} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} badges={{ apartados: overdueCount, inventario: pendingLabelsCount, ...(role === 'admin' ? { ventas: closings.filter((c) => !c.seenAt).length } : {}) }} />
 
       <div className="flex-1 min-w-0">
         {/* Barra superior */}
@@ -1433,6 +1551,7 @@ const App: React.FC = () => {
           {/* ---------------- PÁGINA: INICIO ---------------- */}
           {page === 'inicio' && (
             <div>
+              <ReservationAlerts reservations={reservations} pendingLabels={pendingLabelsCount} onGoApartados={() => setPage('apartados')} onGoInventario={() => setPage('inventario')} />
               <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3">Accesos rápidos</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <button
@@ -1583,7 +1702,7 @@ const App: React.FC = () => {
                 {saleMode === 'quick' ? (
                   <div className="flex flex-wrap items-center gap-3">
                     <QuickSaleForm onAdd={addSale} inventory={inventory} lots={lots} customers={customers} lotColorSettings={lotColorSettings} />
-                    <DailyClosingButton sales={sales} closings={closings} purchases={purchases} aliases={aliases} onSend={sendDailyClosing} />
+                    <DailyClosingButton sales={sales} closings={closings} purchases={purchases} reservations={reservations} aliases={aliases} onSend={sendDailyClosing} />
                   </div>
                 ) : (
                   <SalesHistory sales={sales} onCancel={cancelSale} onEditSale={setEditingSale} role={role} aliases={aliases} />
@@ -1636,6 +1755,9 @@ const App: React.FC = () => {
           {/* ---------------- PÁGINA: INVENTARIO ---------------- */}
           {page === 'inventario' && (
             <div className="space-y-6">
+              <div className="max-w-2xl">
+                <RenewedItemsPanel reservations={reservations} aliases={aliases} onLabelsDone={markLabelsDone} />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
                 <InventoryManager items={inventory} lots={lots} reservations={reservations} onUpdate={handleInventoryUpdate} />
                 {role === 'admin' && (
@@ -1664,7 +1786,7 @@ const App: React.FC = () => {
           {page === 'compras' && (
             <PurchasesPanel
               purchases={purchases}
-              snapshot={getPettyCashSnapshot(closings, sales, purchases, getLocalDateStr())}
+              snapshot={getPettyCashSnapshot(closings, sales, reservations, purchases, getLocalDateStr())}
               role={role}
               currentUid={user?.uid || ''}
               aliases={aliases}
@@ -1703,6 +1825,7 @@ const App: React.FC = () => {
                     sales={sales}
                     expenses={expenses}
                     purchases={purchases}
+                    writeOffs={creditLedger}
                     categories={expenseCategories}
                     garmentPrices={garmentPrices}
                     settings={financeSettings}
@@ -1724,6 +1847,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="space-y-6">
                   <FinanceSettingsCard settings={financeSettings} aliases={aliases} onSave={saveFinanceSettings} />
+                  <AbonosApartadosCard customers={customers} creditLedger={creditLedger} reservations={reservations} onWriteOff={writeOffCredit} />
                   <GarmentPriceCard entries={garmentPrices} aliases={aliases} onAdd={addGarmentPrice} />
                 </div>
               </div>

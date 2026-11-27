@@ -55,6 +55,7 @@ export const ClosingView: React.FC<ClosingViewProps> = ({ closing: c, aliases, s
             <p className="text-[10px] font-black text-white uppercase tracking-widest bg-[#2bb297] px-3 py-2">Cierre de caja chica (efectivo)</p>
             <Row label="Caja chica (con lo que abrió)" value={formatCurrency(c.openingCash)} />
             <Row label="+ Cobrado en efectivo" value={formatCurrency(c.cashSales)} />
+            <Row label="+ Abonos de apartados (efectivo)" value={formatCurrency(c.reservationCash || 0)} />
             <Row label="− Compras pagadas de caja chica" value={purchases > 0 ? `-${formatCurrency(purchases)}` : formatCurrency(0)} thick />
             <Row label="Disponible según el sistema" value={formatCurrency(c.expectedCash)} strong thick />
             <Row label="Efectivo contado por la vendedora" value={formatCurrency(c.countedCash)} strong fill="bg-[#e8f7f2]" />

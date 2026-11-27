@@ -1,5 +1,5 @@
 import {
-  CashPurchase, DailyClosing, Reservation, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
+  CashPurchase, DailyClosing, Reservation, ReservationStatus, Lot, Sale, SaleItem, SalePayment, PaymentMethod, Customer,
   GarmentPriceEntry, Expense, ExpenseCategoryItem, ExpenseTemplate,
   UnitCostItem, FinanceSettings, LotColorSettings, LotStage, InventoryItem,
 } from './types';
@@ -600,6 +600,33 @@ export const getCashSalesSince = (sales: Sale[], previous: DailyClosing | undefi
     })
     .reduce((acc, s) => acc + s.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0), 0);
 
+// Abonos de apartados cobrados DESPUÉS del cierre anterior hasta la fecha indicada
+// (incluida). Todos los abonos de apartados son en efectivo, así que entran a la
+// caja chica. Se ignoran los apartados archivados (eliminados).
+export const getReservationCashSince = (reservations: Reservation[], previous: DailyClosing | undefined, untilDate: string): number =>
+  reservations
+    .filter((r) => r.status !== ReservationStatus.DELETED)
+    .reduce((acc, r) => acc + (r.payments || []).filter((p) => {
+      const d = getLocalDateStr(p.date);
+      return d <= untilDate && (previous ? d > previous.date : d === untilDate);
+    }).reduce((a, p) => a + (p.amount || 0), 0), 0);
+
+// Lote más reciente (por fecha de entrada): a donde pasan las prendas de un apartado vencido.
+export const getLatestLot = (lots: Lot[]): Lot | undefined =>
+  [...lots].sort((a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime())[0];
+
+// Avisos de apartados: pendientes que ya vencieron y los que vencen en los próximos `withinDays` días.
+export const getReservationAlerts = (reservations: Reservation[], withinDays = 2) => {
+  const pending = reservations.filter((r) => r.status === ReservationStatus.PENDING);
+  const overdue = pending.filter((r) => isOverdue(r.date));
+  const expiring = pending
+    .filter((r) => !isOverdue(r.date))
+    .map((r) => ({ res: r, daysLeft: DEADLINE_DAYS - calculateDaysPassed(r.date) }))
+    .filter((x) => x.daysLeft <= withinDays)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+  return { overdue, expiring };
+};
+
 // Compras de caja chica (activas, no anuladas) hechas DESPUÉS del cierre anterior
 // hasta la fecha indicada (incluida). Misma lógica que el efectivo cobrado.
 export const getPurchasesSince = (purchases: CashPurchase[], previous: DailyClosing | undefined, untilDate: string): number =>
@@ -610,10 +637,10 @@ export const getPurchasesSince = (purchases: CashPurchase[], previous: DailyClos
 
 // Caja chica "ahora", según el sistema: lo que quedó en el último cierre + efectivo
 // cobrado desde entonces − compras desde entonces. Sin ningún cierre todavía no hay base.
-export const getPettyCashSnapshot = (closings: DailyClosing[], sales: Sale[], purchases: CashPurchase[], todayStr: string) => {
+export const getPettyCashSnapshot = (closings: DailyClosing[], sales: Sale[], reservations: Reservation[], purchases: CashPurchase[], todayStr: string) => {
   const last = [...closings].filter((c) => c.date <= todayStr).sort((a, b) => b.date.localeCompare(a.date))[0];
   if (!last) return null;
-  const cashSince = getCashSalesSince(sales, last, todayStr);
+  const cashSince = getCashSalesSince(sales, last, todayStr) + getReservationCashSince(reservations, last, todayStr);
   const purchasesSince = getPurchasesSince(purchases, last, todayStr);
   return { baseDate: last.date, base: last.keptInBox, cashSince, purchasesSince, balance: last.keptInBox + cashSince - purchasesSince };
 };

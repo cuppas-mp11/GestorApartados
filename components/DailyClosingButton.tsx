@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { CashPurchase, DailyClosing, Sale } from '../types';
-import { formatCurrency, formatDate, formatTodayLabel, getDayClosingTotals, getCashStatus, getDisplayName, getLocalDateStr, getPreviousClosing, getCashSalesSince, getPurchasesSince, PAYMENT_METHODS } from '../utils';
+import { CashPurchase, DailyClosing, Reservation, Sale } from '../types';
+import { formatCurrency, formatDate, formatTodayLabel, getDayClosingTotals, getCashStatus, getDisplayName, getLocalDateStr, getPreviousClosing, getCashSalesSince, getReservationCashSince, getPurchasesSince, PAYMENT_METHODS } from '../utils';
 import { ClosingView, EyeIcon } from './ClosingView';
 import { buildDayReportPdf, dayReportFileName, downloadPdf, sharePdf } from '../reportPdf';
 
@@ -8,13 +8,14 @@ interface DailyClosingButtonProps {
   sales: Sale[];
   closings: DailyClosing[];
   purchases: CashPurchase[];
+  reservations: Reservation[];
   aliases: Record<string, string>;
   onSend: (input: { openingCash: number; countedCash: number; sentToAdmin: number; note: string }) => Promise<DailyClosing>;
 }
 
 // Botón "Cerrar el día": la vendedora cuenta el efectivo de la caja, el sistema
 // lo compara con lo que él calcula y envía el cierre a la administradora.
-export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, closings, purchases, aliases, onSend }) => {
+export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, closings, purchases, reservations, aliases, onSend }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [counted, setCounted] = useState('');
   const [opening, setOpening] = useState('');
@@ -33,12 +34,13 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
   // Caja corriente: lo que quedó en caja en el cierre anterior es el efectivo de apertura de hoy.
   const previous = getPreviousClosing(closings, today);
   const cashSales = getCashSalesSince(sales, previous, today);
+  const reservationCash = getReservationCashSince(reservations, previous, today);
   const purchasesTotal = getPurchasesSince(purchases, previous, today);
   const isFriday = new Date().getDay() === 5;
 
   const openingNum = previous ? previous.keptInBox : parseFloat(opening);
   const openingValid = previous ? true : opening.trim() !== '' && !isNaN(openingNum) && openingNum >= 0;
-  const expectedCash = (openingValid ? openingNum : 0) + cashSales - purchasesTotal;
+  const expectedCash = (openingValid ? openingNum : 0) + cashSales + reservationCash - purchasesTotal;
 
   const countedNum = parseFloat(counted);
   const hasCounted = counted.trim() !== '' && !isNaN(countedNum) && countedNum >= 0;
@@ -221,6 +223,10 @@ export const DailyClosingButton: React.FC<DailyClosingButtonProps> = ({ sales, c
                     <div className="flex justify-between text-sm">
                       <span className="font-bold text-slate-500">+ Cobrado en efectivo{previous ? ' desde el último cierre' : ' hoy'}</span>
                       <span className="font-black text-slate-700">{formatCurrency(cashSales)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="font-bold text-slate-500">+ Abonos de apartados (efectivo)</span>
+                      <span className="font-black text-slate-700">{formatCurrency(reservationCash)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="font-bold text-slate-500">− Compras pagadas de caja chica</span>

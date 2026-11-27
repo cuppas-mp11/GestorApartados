@@ -170,6 +170,32 @@ export interface Reservation {
   // que se vea en la tabla (y no se vuelva a acreditar si algo se reintenta).
   creditIssued?: boolean;
   creditAmount?: number;
+  // Si el apartado VENCIÓ y se liberó, las prendas pasan al lote más reciente
+  // (segunda oportunidad desde cero). Aquí queda el registro de a dónde se fueron
+  // y si ya se cambió la etiqueta física.
+  renewal?: ReservationRenewal;
+}
+
+export interface ReservationRenewalLine {
+  code: string;
+  name: string;
+  quantity: number;
+  fromLotLabel?: string;
+  newPrice?: number; // precio con el que sale ahora (según la etapa del lote nuevo)
+}
+
+export interface ReservationRenewal {
+  at: string;
+  byEmail: string;
+  toLotId: string;
+  toLotLabel: string;
+  toLotColor?: string;
+  toLotStageLabel: string; // ej. "Precio normal", "Precio rebajado (-15%)"
+  toLotIsFresh: boolean; // false si el lote más reciente ya no está en precio normal
+  lines: ReservationRenewalLine[];
+  labelsDone?: boolean;
+  labelsDoneAt?: string;
+  labelsDoneByEmail?: string;
 }
 
 // ---- Fase 2: Ventas directas (mostrador) ----
@@ -243,7 +269,8 @@ export type CreditTransactionType =
   | 'EARNED_EXPIRED_RESERVATION' // se generó al liberar un apartado vencido
   | 'USED_IN_SALE'                // se usó como método de pago en una venta
   | 'REFUND_CANCELLED_SALE'       // se devuelve porque se anuló una venta que lo usaba
-  | 'MANUAL_ADJUSTMENT';          // admin corrige el saldo a mano
+  | 'MANUAL_ADJUSTMENT'           // admin corrige el saldo a mano
+  | 'WRITTEN_OFF';                 // admin dio de baja un saldo que nunca se usó (pasa a ingreso)
 
 // Bitácora de movimientos de saldo — inmutable, para poder auditar de dónde
 // salió o a dónde se fue cada quetzal de crédito.
@@ -376,8 +403,9 @@ export interface DailyClosing {
   // administradora se queda en caja y es el "efectivo de apertura" del siguiente cierre.
   openingCash: number; // caja chica con que arrancó (lo que quedó en caja en el cierre anterior)
   cashSales: number; // efectivo cobrado en ventas desde el cierre anterior
+  reservationCash?: number; // abonos de apartados (siempre efectivo) desde el cierre anterior
   purchasesTotal: number; // compras pagadas de la caja chica desde el cierre anterior
-  expectedCash: number; // openingCash + cashSales - purchasesTotal
+  expectedCash: number; // openingCash + cashSales + reservationCash - purchasesTotal
   countedCash: number; // efectivo que contó la vendedora
   difference: number; // contado - esperado (positivo = sobra, negativo = falta)
   sentToAdmin: number; // efectivo que se separó para enviar a la administradora (ej. cada viernes)

@@ -819,3 +819,14 @@ service cloud.firestore {
 ```
 
 Clic en **"Publicar"**. Sin estas reglas, la sección Compras no podrá guardar ni leer.
+
+
+---
+
+## Paso 17: Apartados vencidos → último lote, avisos y cuenta de abonos (✅ no requiere cambios de reglas)
+
+- **Abonos de apartados = efectivo en caja chica.** El cierre del día suma una línea "+ Abonos de apartados (efectivo)" y el PDF/vista previa también la muestran.
+- **Liberar un apartado vencido:** las prendas pasan al **lote más reciente** (al precio de ese lote). Sale un aviso con el lote nuevo, el precio y la etiqueta que hay que cambiar. Queda registrado en **Inventario → Prendas liberadas** hasta que se pulse "Ya cambié la etiqueta". Si el apartado no estaba vencido, la prenda vuelve a su lote de origen como antes.
+- **Avisos:** globito rojo en el menú Apartados (vencidos) y en Inventario (etiquetas por cambiar); en Inicio, tarjetas de "vencidos", "por vencer (2 días)" y "etiquetas por cambiar".
+- **Finanzas (admin) → Abonos de apartados:** abonos en apartados activos, saldo a favor pendiente, y botón "Dar de baja" para saldos que nunca se usan; lo dado de baja cuenta como ingreso "Abonos no reclamados" en el Resumen de rentabilidad.
+- Usa colecciones que ya existen (`reservations`, `lots`, `customers`, `creditLedger`), por eso no hay que tocar las reglas.

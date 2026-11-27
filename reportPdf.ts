@@ -110,7 +110,7 @@ export const buildDayReportPdf = async (
       const right = { halign: 'right' as const };
       // Filas (contando desde 0) que llevan una línea negra gruesa debajo: separan
       // los grupos de datos (de dónde sale el efectivo / lo esperado / lo enviado / lo que queda).
-      const THICK_BELOW_ROWS = [2, 3, 5, 6];
+      const THICK_BELOW_ROWS = [3, 4, 6, 7];
 
       let y = (doc as any).lastAutoTable.finalY + 10;
       if (y + 80 > doc.internal.pageSize.getHeight()) {
@@ -125,6 +125,7 @@ export const buildDayReportPdf = async (
           // Grupo 1: de dónde sale el efectivo
           ['Caja chica (con lo que abrió)', { content: formatCurrency(closing.openingCash), styles: right }],
           ['+ Cobrado en efectivo', { content: formatCurrency(closing.cashSales), styles: right }],
+          ['+ Abonos de apartados (efectivo)', { content: formatCurrency(closing.reservationCash || 0), styles: right }],
           ['− Compras pagadas de caja chica', { content: (closing.purchasesTotal || 0) > 0 ? `-${formatCurrency(closing.purchasesTotal)}` : formatCurrency(0), styles: right }],
           // Grupo 2: lo que el sistema espera
           [{ content: 'Disponible según el sistema', styles: bold }, { content: formatCurrency(closing.expectedCash), styles: { ...bold, ...right } }],

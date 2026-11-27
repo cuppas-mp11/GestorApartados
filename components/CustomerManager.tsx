@@ -17,6 +17,7 @@ const CREDIT_TYPE_LABELS: Record<string, string> = {
   USED_IN_SALE: 'Usado en una venta',
   REFUND_CANCELLED_SALE: 'Venta anulada (se devolvió)',
   MANUAL_ADJUSTMENT: 'Ajuste manual',
+  WRITTEN_OFF: 'Dado de baja (pasó a ingreso)',
 };
 
 export const CustomerManager: React.FC<CustomerManagerProps> = ({ customers, creditLedger, role, onUpdate, onDelete, onAdjustCredit }) => {
