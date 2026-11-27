@@ -339,7 +339,13 @@ export const QuickSaleForm: React.FC<QuickSaleFormProps> = ({ onAdd, inventory, 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+    // Clic en el fondo oscuro = lo mismo que la X (se minimiza; la venta a medias se conserva).
+    // Se exige que el clic EMPIECE en el fondo, para que arrastrar el mouse desde dentro
+    // de la ventana hacia afuera (ej. al seleccionar texto) no la cierre sin querer.
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) handleCloseModal(); }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-hidden flex flex-col">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-shrink-0">
           <div>
