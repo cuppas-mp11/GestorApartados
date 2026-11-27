@@ -83,6 +83,7 @@ import {
   getPurchasesSince,
   getReservationCashSince,
   getLatestLot,
+  getLotColorStyle,
   getReservationAlerts,
   getEffectivePriceForLot,
   getLotStage,
@@ -688,8 +689,21 @@ const App: React.FC = () => {
   };
 
   // Nombres de los lotes de donde salió el stock de un apartado (para avisar a dónde vuelve).
-  const originLotNames = (res: Reservation): string =>
-    Array.from(new Set((res.stockAllocations || []).map((a) => lots.find((l) => l.id === a.lotId)?.label || a.code))).join(', ');
+  const originLotChips = (res: Reservation): React.ReactNode => {
+    const seen = new Set<string>();
+    const chips = (res.stockAllocations || [])
+      .map((a) => lots.find((l) => l.id === a.lotId))
+      .filter((l): l is Lot => !!l && !seen.has(l.id) && (seen.add(l.id), true));
+    if (chips.length === 0) return null;
+    return (
+      <div className="flex flex-wrap gap-2">
+        {chips.map((l) => {
+          const c = getLotColorStyle(l.color);
+          return <span key={l.id} className="text-xs font-bold px-3 py-1.5 rounded-full" style={{ background: c.bg, color: c.text }}>{l.label}</span>;
+        })}
+      </div>
+    );
+  };
 
   const updateStatus = async (id: string, status: ReservationStatus) => {
     const res = reservations.find((r) => r.id === id);
@@ -720,7 +734,7 @@ const App: React.FC = () => {
         const renewal = await releaseReservation(res);
         if (renewal) setRenewalNotice({ res, renewal });
         else if (hadStock) {
-          await infoDialog(`Apartado #${res.correlative} liberado.\n\nComo todavía no estaba vencido, las prendas volvieron a su lote de origen: ${originLotNames(res)}.\nNo hay que cambiar etiquetas.`, { title: 'Prenda liberada' });
+          await infoDialog(`Apartado #${res.correlative} liberado.\n\nComo todavía no estaba vencido, las prendas volvieron a su lote de origen. No hay que cambiar etiquetas.`, { title: 'Prenda liberada', content: originLotChips(res) });
         } else {
           await infoDialog(`Apartado #${res.correlative} liberado.\n\nEste apartado es antiguo y no tenía lote registrado, así que no se movió stock.`, { title: 'Prenda liberada' });
         }
@@ -764,7 +778,7 @@ const App: React.FC = () => {
     if (!(await confirmDialog('¿Estás seguro de que deseas eliminar este registro? Pasará al historial de eliminados.', { danger: true, confirmLabel: 'Eliminar' }))) return;
 
     const res = reservations.find((r) => r.id === id);
-    let restoredTo = '';
+    let restoredChips: React.ReactNode = null;
     const updates: Record<string, unknown> = {
       status: ReservationStatus.DELETED,
       deletedAt: new Date().toISOString(),
@@ -778,15 +792,15 @@ const App: React.FC = () => {
       try {
         await restoreStock(res.stockAllocations);
         updates.stockRestored = true;
-        restoredTo = originLotNames(res);
+        restoredChips = originLotChips(res);
       } catch (err) {
         console.error('Error devolviendo stock al eliminar el apartado:', err);
       }
     }
 
     await updateDoc(doc(db, RESERVATIONS_COLLECTION, id), updates);
-    if (restoredTo) {
-      await infoDialog(`Apartado #${res!.correlative} eliminado (archivado).\n\nLas prendas volvieron a su lote de origen: ${restoredTo}.`, { title: 'Registro eliminado' });
+    if (restoredChips) {
+      await infoDialog(`Apartado #${res!.correlative} eliminado (archivado).\n\nLas prendas volvieron a su lote de origen.`, { title: 'Registro eliminado', content: restoredChips });
     }
   };
 

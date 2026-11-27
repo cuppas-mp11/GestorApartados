@@ -13,6 +13,7 @@ interface ConfirmOptions {
   cancelLabel?: string;
   danger?: boolean; // botón rojo (para borrar, anular, descartar)
   hideCancel?: boolean; // ventana informativa: solo botón de aceptar
+  content?: React.ReactNode; // algo visual extra bajo el texto (ej. chips de colores de lote)
 }
 
 interface ConfirmRequest extends ConfirmOptions {
@@ -73,7 +74,19 @@ export const ConfirmHost: React.FC = () => {
       >
         <div className="px-6 pt-6 pb-4">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{req.title || 'Confirmar'}</p>
-          <p className="text-sm font-bold text-slate-800 leading-relaxed whitespace-pre-line">{req.message}</p>
+          {(() => {
+            // Jerarquía: la primera frase (hasta el primer renglón en blanco) es el titular, en negrilla;
+            // el resto es texto normal.
+            const [head, ...rest] = req.message.split('\n\n');
+            const body = rest.join('\n\n');
+            return (
+              <>
+                <p className={`text-sm text-slate-800 leading-relaxed whitespace-pre-line ${body ? 'font-bold' : 'font-medium'}`}>{head}</p>
+                {body && <p className="text-sm font-normal text-slate-600 leading-relaxed whitespace-pre-line mt-2">{body}</p>}
+              </>
+            );
+          })()}
+          {req.content && <div className="mt-3">{req.content}</div>}
         </div>
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex gap-3 justify-end">
           {!req.hideCancel && (
